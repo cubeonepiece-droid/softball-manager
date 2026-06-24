@@ -15,6 +15,14 @@ const POSITIONS = [
   { code: 'RF', label: '右翼' },
 ];
 const GRADES = [1, 2, 3, 4, 5, 6];
+const MEMBER_TYPES = [
+  { code: 'player', label: '選手',         color: 'indigo' },
+  { code: 'parent', label: '保護者',       color: 'green'  },
+  { code: 'coach',  label: '監督・コーチ', color: 'amber'  },
+];
+function memberTypeLabel(code) {
+  return MEMBER_TYPES.find(t => t.code === code)?.label || '選手';
+}
 
 function posLabel(code) {
   const p = POSITIONS.find(p => p.code === code);
@@ -121,22 +129,22 @@ const Members = {
   setup() {
     const modal = ref(false);
     const editing = ref(null);
-    const filterGrade = ref('all');
-    const form = reactive({ name: '', grade: 1, number: '', positions: [], notes: '' });
+    const filterType = ref('all');
+    const form = reactive({ type: 'player', name: '', grade: 1, number: '', positions: [], notes: '' });
 
     function openAdd() {
       editing.value = null;
-      Object.assign(form, { name: '', grade: 1, number: '', positions: [], notes: '' });
+      Object.assign(form, { type: 'player', name: '', grade: 1, number: '', positions: [], notes: '' });
       modal.value = true;
     }
     function openEdit(m) {
       editing.value = m.id;
-      Object.assign(form, { name: m.name, grade: m.grade, number: m.number||'', positions: [...(m.positions||[])], notes: m.notes||'' });
+      Object.assign(form, { type: m.type||'player', name: m.name, grade: m.grade||1, number: m.number||'', positions: [...(m.positions||[])], notes: m.notes||'' });
       modal.value = true;
     }
     function save() {
       if (!form.name.trim()) return alert('名前を入力してください');
-      const data = { name: form.name.trim(), grade: Number(form.grade), number: form.number, positions: [...form.positions], notes: form.notes };
+      const data = { type: form.type, name: form.name.trim(), grade: form.type==='player'?Number(form.grade):null, number: form.type==='player'?form.number:'', positions: form.type==='player'?[...form.positions]:[], notes: form.notes };
       if (editing.value) store.updateMember(editing.value, data);
       else store.addMember(data);
       modal.value = false;
@@ -151,11 +159,21 @@ const Members = {
     }
 
     const filtered = computed(() => {
-      const ms = filterGrade.value === 'all' ? store.members : store.members.filter(m => m.grade == filterGrade.value);
-      return [...ms].sort((a, b) => a.grade - b.grade || (a.number||999) - (b.number||999));
+      const ms = filterType.value === 'all' ? store.members : store.members.filter(m => (m.type||'player') === filterType.value);
+      return [...ms].sort((a, b) => {
+        const ta = a.type||'player', tb = b.type||'player';
+        if (ta !== tb) return ta < tb ? -1 : 1;
+        return (a.grade||0) - (b.grade||0) || (a.number||999) - (b.number||999);
+      });
     });
 
-    return { modal, form, editing, filterGrade, filtered, openAdd, openEdit, save, del, togglePos, POSITIONS, GRADES, store, posLabel };
+    const typeColors = { player: 'indigo', parent: 'green', coach: 'amber' };
+    function typeBadgeClass(type) {
+      const c = typeColors[type||'player'] || 'indigo';
+      return `bg-${c}-100 text-${c}-700`;
+    }
+
+    return { modal, form, editing, filterType, filtered, openAdd, openEdit, save, del, togglePos, POSITIONS, GRADES, MEMBER_TYPES, store, posLabel, memberTypeLabel, typeBadgeClass };
   },
   template: `
 <div class="max-w-2xl mx-auto px-4 py-6">
@@ -164,14 +182,14 @@ const Members = {
     <button @click="openAdd" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700">+ 追加</button>
   </div>
 
-  <!-- 学年フィルター -->
+  <!-- 種別フィルター -->
   <div class="flex gap-2 mb-4 flex-wrap">
-    <button @click="filterGrade='all'" :class="filterGrade==='all'?'bg-indigo-600 text-white':'bg-white text-gray-600 border'"
-            class="px-3 py-1 rounded-full text-sm font-medium">全学年</button>
-    <button v-for="g in GRADES" :key="g"
-            @click="filterGrade=g"
-            :class="filterGrade===g?'bg-indigo-600 text-white':'bg-white text-gray-600 border'"
-            class="px-3 py-1 rounded-full text-sm font-medium">{{ g }}年生</button>
+    <button @click="filterType='all'" :class="filterType==='all'?'bg-indigo-600 text-white':'bg-white text-gray-600 border'"
+            class="px-3 py-1 rounded-full text-sm font-medium">全員</button>
+    <button v-for="t in MEMBER_TYPES" :key="t.code"
+            @click="filterType=t.code"
+            :class="filterType===t.code?'bg-indigo-600 text-white':'bg-white text-gray-600 border'"
+            class="px-3 py-1 rounded-full text-sm font-medium">{{ t.label }}</button>
   </div>
 
   <div v-if="filtered.length === 0" class="text-center py-12 text-gray-400">
@@ -187,11 +205,14 @@ const Members = {
         {{ m.number || m.name[0] }}
       </div>
       <div class="flex-1 min-w-0">
-        <p class="font-semibold text-gray-900">{{ m.name }}
-          <span class="ml-2 text-xs text-gray-500">{{ m.grade }}年生</span>
-          <span v-if="m.number" class="ml-1 text-xs text-gray-400">#{{ m.number }}</span>
+        <p class="font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
+          {{ m.name }}
+          <span :class="typeBadgeClass(m.type)" class="text-xs px-2 py-0.5 rounded-full font-medium">{{ memberTypeLabel(m.type||'player') }}</span>
+          <span v-if="m.type==='player'||!m.type" class="text-xs text-gray-500">{{ m.grade }}年生</span>
+          <span v-if="m.number" class="text-xs text-gray-400">#{{ m.number }}</span>
         </p>
-        <p class="text-xs text-gray-500 mt-1">{{ (m.positions||[]).map(p=>posLabel(p)).join(' / ') || '守備位置未設定' }}</p>
+        <p v-if="m.type==='player'||!m.type" class="text-xs text-gray-500 mt-1">{{ (m.positions||[]).map(p=>posLabel(p)).join(' / ') || '守備位置未設定' }}</p>
+        <p v-if="m.notes" class="text-xs text-gray-400 mt-1">{{ m.notes }}</p>
       </div>
       <div class="flex gap-2">
         <button @click="openEdit(m)" class="text-indigo-500 hover:text-indigo-700 text-sm">編集</button>
@@ -208,32 +229,41 @@ const Members = {
       <h2 class="text-lg font-bold mb-4">{{ editing ? 'メンバー編集' : 'メンバー追加' }}</h2>
       <div class="space-y-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">名前 <span class="text-red-500">*</span></label>
-          <input v-model="form.name" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="山田 太郎">
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">学年</label>
-            <select v-model="form.grade" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
-              <option v-for="g in GRADES" :key="g" :value="g">{{ g }}年生</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">背番号</label>
-            <input v-model="form.number" type="number" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="7">
+          <label class="block text-sm font-medium text-gray-700 mb-2">種別</label>
+          <div class="flex gap-2 flex-wrap">
+            <button v-for="t in MEMBER_TYPES" :key="t.code"
+                    @click="form.type=t.code"
+                    :class="form.type===t.code?'bg-indigo-600 text-white':'bg-gray-100 text-gray-700'"
+                    class="px-4 py-1.5 rounded-lg text-sm font-medium">{{ t.label }}</button>
           </div>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">守備位置（複数可）</label>
-          <div class="flex flex-wrap gap-2">
-            <button v-for="p in POSITIONS" :key="p.code"
-                    @click="togglePos(p.code)"
-                    :class="form.positions.includes(p.code)?'bg-indigo-600 text-white':'bg-gray-100 text-gray-700'"
-                    class="px-3 py-1 rounded-lg text-sm font-medium">
-              {{ p.label }}
-            </button>
-          </div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">名前 <span class="text-red-500">*</span></label>
+          <input v-model="form.name" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="山田 太郎">
         </div>
+        <template v-if="form.type==='player'">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">学年</label>
+              <select v-model="form.grade" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                <option v-for="g in GRADES" :key="g" :value="g">{{ g }}年生</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">背番号</label>
+              <input v-model="form.number" type="number" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="7">
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">守備位置（複数可）</label>
+            <div class="flex flex-wrap gap-2">
+              <button v-for="p in POSITIONS" :key="p.code"
+                      @click="togglePos(p.code)"
+                      :class="form.positions.includes(p.code)?'bg-indigo-600 text-white':'bg-gray-100 text-gray-700'"
+                      class="px-3 py-1 rounded-lg text-sm font-medium">{{ p.label }}</button>
+            </div>
+          </div>
+        </template>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">メモ</label>
           <textarea v-model="form.notes" rows="2" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="自由記入"></textarea>
@@ -246,8 +276,7 @@ const Members = {
     </div>
   </div>
 </div>
-  `,
-  methods: { posLabel }
+  `
 };
 
 // ── 日程管理 ────────────────────────────────────
@@ -459,6 +488,9 @@ const EventDetail = {
     const fpPosition = ref('');
     const useDP = ref(false);
 
+    // 出欠
+    const attendance = ref([]); // [{ memberId, status }]
+
     function initFromEvent() {
       if (!ev.value) return;
       const e = ev.value;
@@ -470,6 +502,7 @@ const EventDetail = {
       fpMemberId.value = e.fpMemberId || '';
       fpPosition.value = e.fpPosition || '';
       useDP.value      = e.useDP || false;
+      attendance.value = JSON.parse(JSON.stringify(e.attendance || []));
     }
 
     onMounted(initFromEvent);
@@ -514,7 +547,34 @@ const EventDetail = {
 
     const sortedMembers = computed(() => [...store.members].sort((a, b) => a.grade - b.grade || a.name.localeCompare(b.name)));
 
-    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel };
+    // 出欠管理
+    function getAttStatus(memberId) {
+      return attendance.value.find(a => a.memberId === memberId)?.status || 'unknown';
+    }
+    function setAttStatus(memberId, status) {
+      const idx = attendance.value.findIndex(a => a.memberId === memberId);
+      if (idx !== -1) attendance.value[idx].status = status;
+      else attendance.value.push({ memberId, status });
+    }
+    function saveAttendance() {
+      store.updateEvent(props.eventId, { attendance: [...attendance.value] });
+      alert('出欠を保存しました');
+    }
+
+    const memberGroups = computed(() => [
+      { label: '選手',         members: store.members.filter(m => !m.type || m.type === 'player') },
+      { label: '保護者',       members: store.members.filter(m => m.type === 'parent') },
+      { label: '監督・コーチ', members: store.members.filter(m => m.type === 'coach') },
+    ].filter(g => g.members.length > 0));
+
+    const attSummary = computed(() => {
+      const all = store.members;
+      const attending = all.filter(m => getAttStatus(m.id) === 'attending').length;
+      const absent    = all.filter(m => getAttStatus(m.id) === 'absent').length;
+      return { attending, absent, unknown: all.length - attending - absent, total: all.length };
+    });
+
+    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -551,6 +611,8 @@ const EventDetail = {
               class="flex-1 py-2 rounded-lg text-sm font-semibold transition-all">スコア</button>
       <button @click="tab='lineup'" :class="tab==='lineup'?'bg-white shadow text-indigo-700':'text-gray-500'"
               class="flex-1 py-2 rounded-lg text-sm font-semibold transition-all">オーダー</button>
+      <button @click="tab='attendance'" :class="tab==='attendance'?'bg-white shadow text-indigo-700':'text-gray-500'"
+              class="flex-1 py-2 rounded-lg text-sm font-semibold transition-all">出欠</button>
     </div>
 
     <!-- ===== スコアタブ ===== -->
@@ -671,6 +733,56 @@ const EventDetail = {
         オーダーを保存
       </button>
     </div>
+
+    <!-- ===== 出欠タブ ===== -->
+    <div v-if="tab==='attendance'">
+      <!-- サマリー -->
+      <div class="flex gap-3 mb-4">
+        <div class="flex-1 bg-green-50 rounded-xl p-3 text-center">
+          <p class="text-2xl font-bold text-green-600">{{ attSummary.attending }}</p>
+          <p class="text-xs text-gray-500 mt-0.5">参加</p>
+        </div>
+        <div class="flex-1 bg-red-50 rounded-xl p-3 text-center">
+          <p class="text-2xl font-bold text-red-500">{{ attSummary.absent }}</p>
+          <p class="text-xs text-gray-500 mt-0.5">不参加</p>
+        </div>
+        <div class="flex-1 bg-gray-50 rounded-xl p-3 text-center">
+          <p class="text-2xl font-bold text-gray-400">{{ attSummary.unknown }}</p>
+          <p class="text-xs text-gray-500 mt-0.5">未定</p>
+        </div>
+      </div>
+
+      <div v-if="attSummary.total === 0" class="text-center py-8 text-gray-400 text-sm">
+        メンバーを先に登録してください
+      </div>
+
+      <!-- グループ別一覧 -->
+      <div v-for="group in memberGroups" :key="group.label" class="bg-white rounded-2xl shadow mb-3 overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-500">{{ group.label }} ({{ group.members.length }}名)</div>
+        <div v-for="m in group.members" :key="m.id"
+             class="flex items-center px-4 py-3 border-b last:border-0">
+          <div class="flex-1">
+            <p class="text-sm font-medium text-gray-800">{{ m.name }}</p>
+            <p v-if="m.grade" class="text-xs text-gray-400">{{ m.grade }}年生</p>
+          </div>
+          <div class="flex gap-2">
+            <button @click="setAttStatus(m.id,'attending')"
+                    :class="getAttStatus(m.id)==='attending'?'bg-green-500 text-white':'bg-gray-100 text-gray-500'"
+                    class="px-3 py-1.5 rounded-lg text-sm font-bold">○</button>
+            <button @click="setAttStatus(m.id,'absent')"
+                    :class="getAttStatus(m.id)==='absent'?'bg-red-500 text-white':'bg-gray-100 text-gray-500'"
+                    class="px-3 py-1.5 rounded-lg text-sm font-bold">×</button>
+            <button @click="setAttStatus(m.id,'unknown')"
+                    :class="getAttStatus(m.id)==='unknown'?'bg-gray-400 text-white':'bg-gray-100 text-gray-400'"
+                    class="px-3 py-1.5 rounded-lg text-sm font-bold">?</button>
+          </div>
+        </div>
+      </div>
+
+      <button @click="saveAttendance" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 mt-2">
+        出欠を保存
+      </button>
+    </div>
   </template>
 </div>
   `
@@ -700,7 +812,30 @@ const Stats = {
       return avg.toFixed(1);
     });
 
-    return { rec, games, winPct, avgScoreUs, avgScoreThem, store, totalScore, navigate };
+    // スコア入力モーダル
+    const scoreModal = ref(null);
+    const modalUs    = ref([]);
+    const modalThem  = ref([]);
+
+    function openScoreModal(ev) {
+      scoreModal.value = ev;
+      const len = ev.innings || 7;
+      modalUs.value   = Array.from({ length: len }, (_, i) => ev.score?.us?.[i]   ?? 0);
+      modalThem.value = Array.from({ length: len }, (_, i) => ev.score?.them?.[i] ?? 0);
+    }
+    function saveModalScore() {
+      if (!scoreModal.value) return;
+      const us    = modalUs.value.map(Number);
+      const them  = modalThem.value.map(Number);
+      const usT   = us.reduce((a,b)=>a+b,0);
+      const themT = them.reduce((a,b)=>a+b,0);
+      const result = (usT > 0 || themT > 0) ? (usT > themT ? 'win' : usT < themT ? 'lose' : 'draw') : null;
+      store.updateEvent(scoreModal.value.id, { score: { us, them }, result });
+      scoreModal.value = null;
+    }
+    function inningArr(ev) { return Array.from({ length: ev.innings || 7 }, (_, i) => i); }
+
+    return { rec, games, winPct, avgScoreUs, avgScoreThem, store, totalScore, navigate, scoreModal, modalUs, modalThem, openScoreModal, saveModalScore, inningArr };
   },
   template: `
 <div class="max-w-2xl mx-auto px-4 py-6 space-y-5">
@@ -738,20 +873,67 @@ const Stats = {
 
   <!-- 試合結果一覧 -->
   <div class="bg-white rounded-2xl shadow p-5">
-    <h2 class="text-sm font-semibold text-gray-500 mb-3">試合結果一覧</h2>
-    <div v-if="!games.filter(e=>e.result).length" class="text-center py-6 text-gray-400 text-sm">試合結果がありません</div>
-    <div v-for="ev in games.filter(e=>e.result)" :key="ev.id"
-         @click="navigate('#/events/'+ev.id)"
-         class="flex items-center py-2.5 border-b last:border-0 gap-3 cursor-pointer hover:bg-gray-50 rounded -mx-1 px-1">
-      <span :class="ev.result==='win'?'bg-green-100 text-green-700':ev.result==='lose'?'bg-red-100 text-red-600':'bg-gray-100 text-gray-600'"
-            class="text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">
-        {{ ev.result==='win'?'勝':ev.result==='lose'?'敗':'分' }}
-      </span>
-      <div class="flex-1">
-        <p class="text-sm font-medium text-gray-800">{{ ev.date }} vs {{ ev.opponent||'不明' }}</p>
-        <p class="text-xs text-gray-400">{{ ev.homeAway==='home'?'ホーム':'アウェイ' }}{{ ev.location?' / '+ev.location:'' }}</p>
+    <h2 class="text-sm font-semibold text-gray-500 mb-3">試合一覧</h2>
+    <div v-if="!games.length" class="text-center py-6 text-gray-400 text-sm">試合がありません</div>
+    <div v-for="ev in games" :key="ev.id"
+         class="py-2.5 border-b last:border-0">
+      <div class="flex items-center gap-3">
+        <span :class="ev.result==='win'?'bg-green-100 text-green-700':ev.result==='lose'?'bg-red-100 text-red-600':ev.result==='draw'?'bg-gray-100 text-gray-600':'bg-blue-50 text-blue-400'"
+              class="text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 w-8 text-center">
+          {{ ev.result==='win'?'勝':ev.result==='lose'?'敗':ev.result==='draw'?'分':'未' }}
+        </span>
+        <div class="flex-1 cursor-pointer" @click="navigate('#/events/'+ev.id)">
+          <p class="text-sm font-medium text-gray-800">{{ ev.date }} vs {{ ev.opponent||'未定' }}</p>
+          <p class="text-xs text-gray-400">{{ ev.homeAway==='home'?'ホーム':'アウェイ' }}{{ ev.location?' / '+ev.location:'' }}</p>
+        </div>
+        <span v-if="ev.result" class="font-mono text-sm font-bold mr-2">{{ totalScore(ev.score?.us) }}-{{ totalScore(ev.score?.them) }}</span>
+        <button @click="openScoreModal(ev)"
+                class="text-xs border border-indigo-300 text-indigo-600 px-2 py-1 rounded-lg hover:bg-indigo-50 flex-shrink-0">
+          スコア入力
+        </button>
       </div>
-      <span class="font-mono text-sm font-bold">{{ totalScore(ev.score?.us) }} - {{ totalScore(ev.score?.them) }}</span>
+    </div>
+  </div>
+
+  <!-- スコア入力モーダル -->
+  <div v-if="scoreModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+      <h2 class="text-lg font-bold mb-1">スコア入力</h2>
+      <p class="text-sm text-gray-500 mb-4">{{ scoreModal.date }} vs {{ scoreModal.opponent||'未定' }}</p>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm mb-4">
+          <thead>
+            <tr class="bg-gray-50">
+              <th class="py-2 px-2 text-left text-gray-500 text-xs w-16">チーム</th>
+              <th v-for="i in inningArr(scoreModal)" :key="i" class="py-2 px-1 text-center text-gray-500 text-xs w-10">{{ i+1 }}</th>
+              <th class="py-2 px-2 text-center text-gray-700 text-xs w-10">計</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="border-t">
+              <td class="py-2 px-2 font-semibold text-indigo-700 text-xs">自チーム</td>
+              <td v-for="(_, i) in modalUs" :key="i" class="py-1 px-0.5">
+                <input v-model="modalUs[i]" type="number" min="0" max="99"
+                       class="w-9 text-center border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+              </td>
+              <td class="text-center font-bold text-indigo-700">{{ modalUs.reduce((a,b)=>a+(+b),0) }}</td>
+            </tr>
+            <tr class="border-t bg-gray-50">
+              <td class="py-2 px-2 font-semibold text-gray-600 text-xs">{{ scoreModal.opponent||'相手' }}</td>
+              <td v-for="(_, i) in modalThem" :key="i" class="py-1 px-0.5">
+                <input v-model="modalThem[i]" type="number" min="0" max="99"
+                       class="w-9 text-center border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-gray-50">
+              </td>
+              <td class="text-center font-bold text-gray-600">{{ modalThem.reduce((a,b)=>a+(+b),0) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="text-xs text-gray-400 text-center mb-4">保存すると勝敗が自動判定されます</p>
+      <div class="flex gap-3">
+        <button @click="scoreModal=null" class="flex-1 border border-gray-300 text-gray-700 py-2 rounded-xl text-sm font-semibold hover:bg-gray-50">キャンセル</button>
+        <button @click="saveModalScore" class="flex-1 bg-indigo-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700">保存</button>
+      </div>
     </div>
   </div>
 
