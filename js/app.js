@@ -187,21 +187,21 @@ const Members = {
     const modal = ref(false);
     const editing = ref(null);
     const filterType = ref('all');
-    const form = reactive({ type: 'player', shortName: '', name: '', grade: 1, number: '', positions: [], notes: '' });
+    const form = reactive({ type: 'player', shortName: '', name: '', grade: 1, number: '', positions: [], joinDate: '', photo: '', notes: '' });
 
     function openAdd() {
       editing.value = null;
-      Object.assign(form, { type: 'player', shortName: '', name: '', grade: 1, number: '', positions: [], notes: '' });
+      Object.assign(form, { type: 'player', shortName: '', name: '', grade: 1, number: '', positions: [], joinDate: '', photo: '', notes: '' });
       modal.value = true;
     }
     function openEdit(m) {
       editing.value = m.id;
-      Object.assign(form, { type: m.type||'player', shortName: m.shortName||'', name: m.name||'', grade: m.grade||1, number: m.number||'', positions: [...(m.positions||[])], notes: m.notes||'' });
+      Object.assign(form, { type: m.type||'player', shortName: m.shortName||'', name: m.name||'', grade: m.grade||1, number: m.number||'', positions: [...(m.positions||[])], joinDate: m.joinDate||'', photo: m.photo||'', notes: m.notes||'' });
       modal.value = true;
     }
     function save() {
       if (!form.name.trim()) return alert('フルネームを入力してください');
-      const data = { type: form.type, name: form.name.trim(), shortName: form.shortName.trim(), grade: form.type==='player'?Number(form.grade):null, number: form.type==='player'?form.number:'', positions: form.type==='player'?[...form.positions]:[], notes: form.notes };
+      const data = { type: form.type, name: form.name.trim(), shortName: form.shortName.trim(), grade: form.type==='player'?Number(form.grade):null, number: form.type==='player'?form.number:'', positions: form.type==='player'?[...form.positions]:[], joinDate: form.joinDate, photo: form.photo, notes: form.notes };
       if (editing.value) store.updateMember(editing.value, data);
       else store.addMember(data);
       modal.value = false;
@@ -214,13 +214,25 @@ const Members = {
       if (i === -1) form.positions.push(code);
       else form.positions.splice(i, 1);
     }
+    function onPhotoSelect(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => { form.photo = ev.target.result; };
+      reader.readAsDataURL(file);
+    }
+    function removePhoto() { form.photo = ''; }
 
     const filtered = computed(() => {
       const ms = filterType.value === 'all' ? store.members : store.members.filter(m => (m.type||'player') === filterType.value);
       return [...ms].sort((a, b) => {
         const ta = a.type||'player', tb = b.type||'player';
         if (ta !== tb) return ta < tb ? -1 : 1;
-        return (a.grade||0) - (b.grade||0) || (a.number||999) - (b.number||999);
+        const gradeDiff = (a.grade||0) - (b.grade||0);
+        if (gradeDiff !== 0) return gradeDiff;
+        const ja = a.joinDate||'9999', jb = b.joinDate||'9999';
+        if (ja !== jb) return ja < jb ? -1 : 1;
+        return (Number(a.number)||999) - (Number(b.number)||999);
       });
     });
 
@@ -230,7 +242,7 @@ const Members = {
       return `bg-${c}-100 text-${c}-700`;
     }
 
-    return { modal, form, editing, filterType, filtered, openAdd, openEdit, save, del, togglePos, POSITIONS, GRADES, MEMBER_TYPES, store, posLabel, memberTypeLabel, typeBadgeClass, memberShortName };
+    return { modal, form, editing, filterType, filtered, openAdd, openEdit, save, del, togglePos, onPhotoSelect, removePhoto, POSITIONS, GRADES, MEMBER_TYPES, store, posLabel, memberTypeLabel, typeBadgeClass, memberShortName };
   },
   template: `
 <div class="max-w-2xl mx-auto px-4 py-6">
@@ -258,8 +270,12 @@ const Members = {
   <div class="grid gap-3">
     <div v-for="m in filtered" :key="m.id"
          class="bg-white rounded-xl shadow p-4 flex items-center gap-4">
-      <div class="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center font-bold text-indigo-700 text-lg flex-shrink-0">
-        {{ m.number || memberShortName(m)[0] }}
+      <!-- 写真 or プレースホルダー -->
+      <div class="flex-shrink-0">
+        <img v-if="m.photo" :src="m.photo" class="w-14 h-14 rounded-full object-cover border-2 border-indigo-200">
+        <div v-else class="w-14 h-14 rounded-full bg-indigo-100 flex items-center justify-center font-bold text-indigo-700 text-lg">
+          {{ m.number || memberShortName(m)[0] || '?' }}
+        </div>
       </div>
       <div class="flex-1 min-w-0">
         <p class="font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
@@ -270,7 +286,8 @@ const Members = {
         </p>
         <p v-if="m.shortName && m.shortName !== m.name" class="text-xs text-indigo-500 mt-0.5">登録名: {{ m.shortName }}</p>
         <p v-if="m.type==='player'||!m.type" class="text-xs text-gray-500 mt-1">{{ (m.positions||[]).map(p=>posLabel(p)).join(' / ') || '守備位置未設定' }}</p>
-        <p v-if="m.notes" class="text-xs text-gray-400 mt-1">{{ m.notes }}</p>
+        <p v-if="m.joinDate" class="text-xs text-gray-400 mt-0.5">入部: {{ m.joinDate }}</p>
+        <p v-if="m.notes" class="text-xs text-gray-400 mt-0.5">{{ m.notes }}</p>
       </div>
       <div class="flex gap-2">
         <button @click="openEdit(m)" class="text-indigo-500 hover:text-indigo-700 text-sm">編集</button>
@@ -326,6 +343,28 @@ const Members = {
             </div>
           </div>
         </template>
+        <!-- 写真 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">写真</label>
+          <div class="flex items-center gap-4">
+            <div class="flex-shrink-0">
+              <img v-if="form.photo" :src="form.photo" class="w-16 h-16 rounded-full object-cover border-2 border-indigo-200">
+              <div v-else class="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 text-2xl border-2 border-dashed border-gray-300">👤</div>
+            </div>
+            <div class="flex flex-col gap-2">
+              <label class="cursor-pointer bg-indigo-50 text-indigo-600 border border-indigo-300 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-100">
+                📷 写真を選択
+                <input type="file" accept="image/*" class="hidden" @change="onPhotoSelect">
+              </label>
+              <button v-if="form.photo" @click="removePhoto" class="text-xs text-red-400 hover:text-red-600">削除</button>
+            </div>
+          </div>
+        </div>
+        <!-- 入部日 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">入部日</label>
+          <input v-model="form.joinDate" type="date" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">メモ</label>
           <textarea v-model="form.notes" rows="2" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="自由記入"></textarea>
