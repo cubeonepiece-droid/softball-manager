@@ -24,6 +24,32 @@ function memberTypeLabel(code) {
   return MEMBER_TYPES.find(t => t.code === code)?.label || '選手';
 }
 
+const EVENT_TYPES = [
+  { code: 'game',       label: '公式戦',   color: 'indigo' },
+  { code: 'tournament', label: '大会',     color: 'red'    },
+  { code: 'scrimmage',  label: '練習試合', color: 'blue'   },
+  { code: 'practice',   label: '練習',     color: 'green'  },
+  { code: 'joint',      label: '合同練習', color: 'teal'   },
+];
+const GAME_TYPES     = ['game', 'tournament', 'scrimmage'];
+const PRACTICE_TYPES = ['practice', 'joint'];
+function isGameType(type) { return GAME_TYPES.includes(type); }
+function eventTypeLabel(type) { return EVENT_TYPES.find(t => t.code === type)?.label || type; }
+function memberShortName(m) { return m ? (m.shortName || m.name || '') : ''; }
+function memberFullName(m)  { return m ? (m.name || '') : ''; }
+
+const FIELD_POSITIONS = [
+  { code: 'CF', label: '中堅', x: 160, y:  34 },
+  { code: 'LF', label: '左翼', x:  68, y:  70 },
+  { code: 'RF', label: '右翼', x: 252, y:  70 },
+  { code: 'SS', label: '遊撃', x: 120, y: 112 },
+  { code: '2B', label: '二塁', x: 200, y: 112 },
+  { code: '3B', label: '三塁', x:  86, y: 162 },
+  { code: '1B', label: '一塁', x: 234, y: 162 },
+  { code: 'P',  label: '投手', x: 160, y: 152 },
+  { code: 'C',  label: '捕手', x: 160, y: 220 },
+];
+
 function posLabel(code) {
   const p = POSITIONS.find(p => p.code === code);
   return p ? p.label : code;
@@ -94,8 +120,10 @@ const Dashboard = {
     <div v-for="ev in upcoming" :key="ev.id"
          @click="navigate('#/events/' + ev.id)"
          class="flex items-center gap-3 py-2 border-b last:border-0 cursor-pointer hover:bg-gray-50 rounded">
-      <span :class="ev.type==='game'?'bg-indigo-100 text-indigo-700':'bg-green-100 text-green-700'"
-            class="text-xs px-2 py-1 rounded-full font-semibold">{{ ev.type==='game'?'試合':'練習' }}</span>
+      <span class="text-xs px-2 py-1 rounded-full font-semibold"
+            :class="['game','tournament','scrimmage'].includes(ev.type)?'bg-indigo-100 text-indigo-700':'bg-green-100 text-green-700'">
+        {{ {'game':'公式戦','tournament':'大会','scrimmage':'練習試合','practice':'練習','joint':'合同練習'}[ev.type]||'練習' }}
+      </span>
       <div>
         <p class="text-sm font-medium">{{ ev.date }} {{ ev.time }}</p>
         <p class="text-xs text-gray-500">{{ ev.type==='game'? (ev.opponent||'相手未定') : (ev.location||'場所未定') }}</p>
@@ -130,21 +158,21 @@ const Members = {
     const modal = ref(false);
     const editing = ref(null);
     const filterType = ref('all');
-    const form = reactive({ type: 'player', name: '', grade: 1, number: '', positions: [], notes: '' });
+    const form = reactive({ type: 'player', shortName: '', name: '', grade: 1, number: '', positions: [], notes: '' });
 
     function openAdd() {
       editing.value = null;
-      Object.assign(form, { type: 'player', name: '', grade: 1, number: '', positions: [], notes: '' });
+      Object.assign(form, { type: 'player', shortName: '', name: '', grade: 1, number: '', positions: [], notes: '' });
       modal.value = true;
     }
     function openEdit(m) {
       editing.value = m.id;
-      Object.assign(form, { type: m.type||'player', name: m.name, grade: m.grade||1, number: m.number||'', positions: [...(m.positions||[])], notes: m.notes||'' });
+      Object.assign(form, { type: m.type||'player', shortName: m.shortName||'', name: m.name||'', grade: m.grade||1, number: m.number||'', positions: [...(m.positions||[])], notes: m.notes||'' });
       modal.value = true;
     }
     function save() {
-      if (!form.name.trim()) return alert('名前を入力してください');
-      const data = { type: form.type, name: form.name.trim(), grade: form.type==='player'?Number(form.grade):null, number: form.type==='player'?form.number:'', positions: form.type==='player'?[...form.positions]:[], notes: form.notes };
+      if (!form.name.trim()) return alert('フルネームを入力してください');
+      const data = { type: form.type, name: form.name.trim(), shortName: form.shortName.trim(), grade: form.type==='player'?Number(form.grade):null, number: form.type==='player'?form.number:'', positions: form.type==='player'?[...form.positions]:[], notes: form.notes };
       if (editing.value) store.updateMember(editing.value, data);
       else store.addMember(data);
       modal.value = false;
@@ -173,7 +201,7 @@ const Members = {
       return `bg-${c}-100 text-${c}-700`;
     }
 
-    return { modal, form, editing, filterType, filtered, openAdd, openEdit, save, del, togglePos, POSITIONS, GRADES, MEMBER_TYPES, store, posLabel, memberTypeLabel, typeBadgeClass };
+    return { modal, form, editing, filterType, filtered, openAdd, openEdit, save, del, togglePos, POSITIONS, GRADES, MEMBER_TYPES, store, posLabel, memberTypeLabel, typeBadgeClass, memberShortName };
   },
   template: `
 <div class="max-w-2xl mx-auto px-4 py-6">
@@ -202,7 +230,7 @@ const Members = {
     <div v-for="m in filtered" :key="m.id"
          class="bg-white rounded-xl shadow p-4 flex items-center gap-4">
       <div class="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center font-bold text-indigo-700 text-lg flex-shrink-0">
-        {{ m.number || m.name[0] }}
+        {{ m.number || memberShortName(m)[0] }}
       </div>
       <div class="flex-1 min-w-0">
         <p class="font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
@@ -211,6 +239,7 @@ const Members = {
           <span v-if="m.type==='player'||!m.type" class="text-xs text-gray-500">{{ m.grade }}年生</span>
           <span v-if="m.number" class="text-xs text-gray-400">#{{ m.number }}</span>
         </p>
+        <p v-if="m.shortName && m.shortName !== m.name" class="text-xs text-indigo-500 mt-0.5">登録名: {{ m.shortName }}</p>
         <p v-if="m.type==='player'||!m.type" class="text-xs text-gray-500 mt-1">{{ (m.positions||[]).map(p=>posLabel(p)).join(' / ') || '守備位置未設定' }}</p>
         <p v-if="m.notes" class="text-xs text-gray-400 mt-1">{{ m.notes }}</p>
       </div>
@@ -238,8 +267,12 @@ const Members = {
           </div>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">名前 <span class="text-red-500">*</span></label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">フルネーム <span class="text-red-500">*</span></label>
           <input v-model="form.name" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="山田 太郎">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">登録名称 <span class="text-xs text-gray-400">（打順表・フィールドに表示）</span></label>
+          <input v-model="form.shortName" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="太郎（省略時はフルネームを使用）">
         </div>
         <template v-if="form.type==='player'">
           <div class="grid grid-cols-2 gap-3">
@@ -324,14 +357,19 @@ const Schedule = {
       }))
     );
 
+    function selectType(type) {
+      form.type = type;
+      if (PRACTICE_TYPES.includes(type) && !form.location) form.location = '大東小学校';
+      if (GAME_TYPES.includes(type) && form.location === '大東小学校') form.location = '';
+    }
     function openAdd(d) {
       editing.value = null;
-      Object.assign(form, { type: 'game', date: d ? dateStr(d) : '', time: '09:00', opponent: '', location: '', homeAway: 'home', innings: 7, notes: '' });
+      Object.assign(form, { type: 'practice', date: d ? dateStr(d) : '', time: '09:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 7, notes: '' });
       modal.value = true;
     }
     function openEdit(ev) {
       editing.value = ev.id;
-      Object.assign(form, { type: ev.type, date: ev.date, time: ev.time||'', opponent: ev.opponent||'', location: ev.location||'', homeAway: ev.homeAway||'home', innings: ev.innings||7, notes: ev.notes||'' });
+      Object.assign(form, { type: ev.type||'practice', date: ev.date, time: ev.time||'', opponent: ev.opponent||'', location: ev.location||'', homeAway: ev.homeAway||'home', innings: ev.innings||7, notes: ev.notes||'' });
       modal.value = true;
     }
     function save() {
@@ -341,15 +379,21 @@ const Schedule = {
       else {
         const id = store.addEvent(data);
         modal.value = false;
-        if (form.type === 'game') navigate('#/events/' + id);
+        if (isGameType(form.type)) navigate('#/events/' + id);
       }
     }
     function del(ev) {
-      if (confirm(`「${ev.date} ${ev.type==='game'?'試合':'練習'}」を削除しますか？`)) store.deleteEvent(ev.id);
+      if (confirm(`「${ev.date} ${eventTypeLabel(ev.type)}」を削除しますか？`)) store.deleteEvent(ev.id);
     }
     function goEvent(ev) { navigate('#/events/' + ev.id); }
+    function evTypeBadgeClass(type) {
+      const t = EVENT_TYPES.find(x => x.code === type);
+      if (!t) return 'bg-gray-100 text-gray-700';
+      const c = t.color;
+      return `bg-${c}-100 text-${c}-700`;
+    }
 
-    return { calYear, calMonth, calDays, monthEvents, modal, form, editing, prevMonth, nextMonth, eventsOnDay, isToday, openAdd, openEdit, save, del, goEvent, navigate };
+    return { calYear, calMonth, calDays, monthEvents, modal, form, editing, prevMonth, nextMonth, eventsOnDay, isToday, openAdd, openEdit, save, del, goEvent, navigate, EVENT_TYPES, isGameType, eventTypeLabel, selectType, evTypeBadgeClass };
   },
   template: `
 <div class="max-w-2xl mx-auto px-4 py-6">
@@ -389,14 +433,14 @@ const Schedule = {
     <div v-if="monthEvents.length===0" class="text-center py-8 text-gray-400">この月の予定はありません</div>
     <div v-for="ev in monthEvents" :key="ev.id"
          class="bg-white rounded-xl shadow p-4 flex items-center gap-3">
-      <span :class="ev.type==='game'?'bg-indigo-100 text-indigo-700':'bg-green-100 text-green-700'"
+      <span :class="evTypeBadgeClass(ev.type)"
             class="text-xs px-2 py-1 rounded-full font-semibold flex-shrink-0">
-        {{ ev.type==='game'?'試合':'練習' }}
+        {{ eventTypeLabel(ev.type) }}
       </span>
       <div class="flex-1 cursor-pointer" @click="goEvent(ev)">
         <p class="text-sm font-medium">{{ ev.date }} {{ ev.time }}</p>
-        <p class="text-xs text-gray-500">{{ ev.type==='game'?(ev.opponent||'相手未定')+(ev.location?' @ '+ev.location:'') : (ev.location||'場所未定') }}</p>
-        <p v-if="ev.type==='game' && ev.result" :class="ev.result==='win'?'text-green-600':ev.result==='lose'?'text-red-500':'text-gray-500'"
+        <p class="text-xs text-gray-500">{{ isGameType(ev.type)?(ev.opponent||'相手未定')+(ev.location?' @ '+ev.location:'') : (ev.location||'場所未定') }}</p>
+        <p v-if="isGameType(ev.type) && ev.result" :class="ev.result==='win'?'text-green-600':ev.result==='lose'?'text-red-500':'text-gray-500'"
            class="text-xs font-semibold mt-0.5">
           {{ ev.result==='win'?'● 勝利':ev.result==='lose'?'● 敗戦':'● 引分' }}
         </p>
@@ -415,13 +459,11 @@ const Schedule = {
       <div class="space-y-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">種別</label>
-          <div class="flex gap-3">
-            <label class="flex items-center gap-1.5 cursor-pointer">
-              <input type="radio" v-model="form.type" value="game" class="accent-indigo-600"> 試合
-            </label>
-            <label class="flex items-center gap-1.5 cursor-pointer">
-              <input type="radio" v-model="form.type" value="practice" class="accent-green-600"> 練習
-            </label>
+          <div class="flex flex-wrap gap-2">
+            <button v-for="et in EVENT_TYPES" :key="et.code"
+                    @click="selectType(et.code)"
+                    :class="form.type===et.code?'bg-indigo-600 text-white':'bg-gray-100 text-gray-700'"
+                    class="px-3 py-1.5 rounded-lg text-sm font-medium">{{ et.label }}</button>
           </div>
         </div>
         <div class="grid grid-cols-2 gap-3">
@@ -434,11 +476,11 @@ const Schedule = {
             <input v-model="form.time" type="time" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
           </div>
         </div>
-        <div v-if="form.type==='game'">
+        <div v-if="isGameType(form.type)">
           <label class="block text-sm font-medium text-gray-700 mb-1">相手チーム</label>
           <input v-model="form.opponent" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="○○小学校">
         </div>
-        <div v-if="form.type==='game'">
+        <div v-if="isGameType(form.type)">
           <label class="block text-sm font-medium text-gray-700 mb-1">ホーム / アウェイ</label>
           <div class="flex gap-3">
             <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" v-model="form.homeAway" value="home" class="accent-indigo-600"> ホーム</label>
@@ -449,7 +491,7 @@ const Schedule = {
           <label class="block text-sm font-medium text-gray-700 mb-1">場所</label>
           <input v-model="form.location" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="○○グラウンド">
         </div>
-        <div v-if="form.type==='game'">
+        <div v-if="isGameType(form.type)">
           <label class="block text-sm font-medium text-gray-700 mb-1">イニング数</label>
           <select v-model="form.innings" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
             <option v-for="n in [5,6,7,9]" :key="n" :value="n">{{ n }}回</option>
@@ -574,7 +616,37 @@ const EventDetail = {
       return { attending, absent, unknown: all.length - attending - absent, total: all.length };
     });
 
-    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary };
+    // ── シミュレーション ──
+    const selectedPos = ref(null);
+    const FIELD_POS_LIST = FIELD_POSITIONS;
+    function simPlayerName(posCode) {
+      const entry = lineup.value.find(l => l.position === posCode);
+      if (entry?.memberId) {
+        const m = store.getMember(entry.memberId);
+        return m ? memberShortName(m) : '';
+      }
+      if (posCode === fpPosition.value && fpMemberId.value) {
+        const m = store.getMember(fpMemberId.value);
+        return m ? memberShortName(m) : '';
+      }
+      return '';
+    }
+    function simAssign(posCode, memberId) {
+      lineup.value.forEach(l => { if (l.position === posCode) l.position = ''; });
+      if (memberId) {
+        const existing = lineup.value.find(l => l.memberId === memberId);
+        if (existing) { existing.position = posCode; }
+        else {
+          const empty = lineup.value.find(l => !l.memberId);
+          if (empty) { empty.memberId = memberId; empty.position = posCode; }
+          else lineup.value.push({ order: lineup.value.length + 1, memberId, position: posCode, isDP: false });
+        }
+      }
+      selectedPos.value = null;
+    }
+    const playerMembers = computed(() => store.members.filter(m => !m.type || m.type === 'player'));
+
+    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, isGameType, eventTypeLabel, memberShortName };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -583,7 +655,7 @@ const EventDetail = {
   <div class="flex items-center gap-3 mb-4">
     <button @click="navigate('#/schedule')" class="text-indigo-600 hover:text-indigo-800 text-sm">◀ 日程</button>
     <h1 class="text-xl font-bold text-gray-800 flex-1">
-      {{ ev.type==='game'?'⚾ 試合詳細':'🏋️ 練習詳細' }}
+      {{ isGameType(ev.type) ? '⚾ ' + eventTypeLabel(ev.type) : '🏋️ ' + eventTypeLabel(ev.type) }}
     </h1>
   </div>
 
@@ -592,8 +664,8 @@ const EventDetail = {
     <div class="grid grid-cols-2 gap-2 text-sm">
       <div><span class="text-gray-500">日付：</span><span class="font-medium">{{ ev.date }}</span></div>
       <div><span class="text-gray-500">時間：</span><span class="font-medium">{{ ev.time }}</span></div>
-      <div v-if="ev.type==='game'"><span class="text-gray-500">相手：</span><span class="font-medium">{{ ev.opponent||'未定' }}</span></div>
-      <div v-if="ev.type==='game'"><span class="text-gray-500">H/A：</span><span class="font-medium">{{ ev.homeAway==='home'?'ホーム':'アウェイ' }}</span></div>
+      <div v-if="isGameType(ev.type)"><span class="text-gray-500">相手：</span><span class="font-medium">{{ ev.opponent||'未定' }}</span></div>
+      <div v-if="isGameType(ev.type)"><span class="text-gray-500">H/A：</span><span class="font-medium">{{ ev.homeAway==='home'?'ホーム':'アウェイ' }}</span></div>
       <div><span class="text-gray-500">場所：</span><span class="font-medium">{{ ev.location||'未定' }}</span></div>
     </div>
   </div>
@@ -604,15 +676,17 @@ const EventDetail = {
     <p class="mt-2 text-sm">{{ ev.notes }}</p>
   </div>
 
-  <template v-if="ev.type==='game'">
+  <div>
     <!-- タブ -->
-    <div class="flex mb-4 bg-gray-100 rounded-xl p-1">
-      <button @click="tab='score'" :class="tab==='score'?'bg-white shadow text-indigo-700':'text-gray-500'"
-              class="flex-1 py-2 rounded-lg text-sm font-semibold transition-all">スコア</button>
-      <button @click="tab='lineup'" :class="tab==='lineup'?'bg-white shadow text-indigo-700':'text-gray-500'"
-              class="flex-1 py-2 rounded-lg text-sm font-semibold transition-all">オーダー</button>
+    <div class="flex mb-4 bg-gray-100 rounded-xl p-1 gap-0.5">
+      <button v-if="isGameType(ev.type)" @click="tab='score'" :class="tab==='score'?'bg-white shadow text-indigo-700':'text-gray-500'"
+              class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all">スコア</button>
+      <button v-if="isGameType(ev.type)" @click="tab='lineup'" :class="tab==='lineup'?'bg-white shadow text-indigo-700':'text-gray-500'"
+              class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all">オーダー</button>
       <button @click="tab='attendance'" :class="tab==='attendance'?'bg-white shadow text-indigo-700':'text-gray-500'"
-              class="flex-1 py-2 rounded-lg text-sm font-semibold transition-all">出欠</button>
+              class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all">出欠</button>
+      <button v-if="isGameType(ev.type)" @click="tab='simulate'" :class="tab==='simulate'?'bg-white shadow text-indigo-700':'text-gray-500'"
+              class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all">シミュレ</button>
     </div>
 
     <!-- ===== スコアタブ ===== -->
@@ -783,7 +857,84 @@ const EventDetail = {
         出欠を保存
       </button>
     </div>
-  </template>
+
+    <!-- ===== シミュレーションタブ ===== -->
+    <div v-if="tab==='simulate'">
+      <!-- フィールド図 -->
+      <div class="bg-white rounded-2xl shadow overflow-hidden mb-4">
+        <svg viewBox="0 0 320 260" style="width:100%;display:block">
+          <!-- 外野芝 -->
+          <ellipse cx="160" cy="120" rx="152" ry="130" fill="#4ade80" opacity="0.35"/>
+          <!-- 内野土 -->
+          <polygon points="160,230 252,145 160,58 68,145" fill="#fbbf24" opacity="0.4"/>
+          <!-- ベースライン -->
+          <line x1="160" y1="230" x2="252" y2="145" stroke="white" stroke-width="1.5"/>
+          <line x1="252" y1="145" x2="160" y2="58" stroke="white" stroke-width="1.5"/>
+          <line x1="160" y1="58" x2="68" y2="145" stroke="white" stroke-width="1.5"/>
+          <line x1="68" y1="145" x2="160" y2="230" stroke="white" stroke-width="1.5"/>
+          <!-- ピッチャーズマウンド -->
+          <circle cx="160" cy="152" r="9" fill="#d97706" opacity="0.8"/>
+          <!-- ベース -->
+          <rect x="153" y="222" width="14" height="14" fill="white" rx="2"/>
+          <rect x="244" y="137" width="14" height="14" fill="white" rx="2"/>
+          <rect x="153" y="50" width="14" height="14" fill="white" rx="2"/>
+          <rect x="62" y="137" width="14" height="14" fill="white" rx="2"/>
+          <!-- 各ポジション -->
+          <g v-for="fp in FIELD_POS_LIST" :key="fp.code"
+             @click="selectedPos=fp.code" style="cursor:pointer">
+            <circle :cx="fp.x" :cy="fp.y" r="20"
+                    :fill="simPlayerName(fp.code)?'#6366f1':'rgba(255,255,255,0.88)'"
+                    :stroke="selectedPos===fp.code?'#f59e0b':'#6366f1'"
+                    stroke-width="2"/>
+            <text :x="fp.x" :y="fp.y-5" text-anchor="middle" dominant-baseline="middle"
+                  font-size="7" :fill="simPlayerName(fp.code)?'#c7d2fe':'#9ca3af'">{{ fp.label }}</text>
+            <text :x="fp.x" :y="fp.y+7" text-anchor="middle" dominant-baseline="middle"
+                  font-size="9" font-weight="bold"
+                  :fill="simPlayerName(fp.code)?'white':'#6366f1'">
+              {{ simPlayerName(fp.code) || '+' }}
+            </text>
+          </g>
+        </svg>
+      </div>
+
+      <!-- 打順一覧 -->
+      <div class="bg-white rounded-2xl shadow overflow-hidden mb-4">
+        <div class="px-4 py-2 border-b bg-gray-50 text-xs font-semibold text-gray-500">打順</div>
+        <div v-for="entry in lineup" :key="entry.order"
+             class="flex items-center gap-3 px-4 py-2.5 border-b last:border-0">
+          <span class="text-sm font-bold text-indigo-600 w-5">{{ entry.order }}</span>
+          <span class="text-sm font-medium flex-1">
+            {{ entry.memberId ? memberShortName(store.getMember(entry.memberId)) : '未設定' }}
+          </span>
+          <span class="text-xs text-gray-400 w-10">{{ entry.position ? posLabel(entry.position) : '-' }}</span>
+          <span v-if="entry.isDP" class="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">DP</span>
+        </div>
+      </div>
+
+      <button @click="saveLineup" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700">
+        オーダーを保存
+      </button>
+
+      <!-- ポジション選択パネル -->
+      <div v-if="selectedPos" class="fixed inset-x-4 bottom-20 bg-white rounded-2xl shadow-2xl border p-4 z-50">
+        <p class="text-sm font-bold mb-3 text-gray-700">
+          「{{ (FIELD_POS_LIST.find(p=>p.code===selectedPos)||{}).label }}」の選手を選択
+        </p>
+        <div class="grid grid-cols-3 gap-2 max-h-44 overflow-y-auto">
+          <button v-for="m in playerMembers" :key="m.id"
+                  @click="simAssign(selectedPos, m.id)"
+                  class="px-2 py-2 rounded-lg border text-sm hover:bg-indigo-50 text-left truncate"
+                  :class="lineup.some(l=>l.memberId===m.id&&l.position===selectedPos)?'border-indigo-500 bg-indigo-50 font-semibold':''">
+            {{ memberShortName(m) }}
+          </button>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <button @click="simAssign(selectedPos, '')" class="flex-1 py-2 border rounded-lg text-sm text-red-400 hover:bg-red-50">削除</button>
+          <button @click="selectedPos=null" class="flex-1 py-2 border rounded-lg text-sm text-gray-500 hover:bg-gray-50">キャンセル</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
   `
 };

@@ -86,7 +86,7 @@ window.store = Vue.reactive({
   getEvent(id) { return this.events.find(e => e.id === id); },
 
   // ── 成績計算 ────────────────────────────────
-  get gameEvents() { return this.events.filter(e => e.type === 'game'); },
+  get gameEvents() { return this.events.filter(e => ['game','tournament','scrimmage'].includes(e.type)); },
   get record() {
     const games = this.gameEvents.filter(e => e.result);
     return {
