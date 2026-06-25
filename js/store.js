@@ -44,6 +44,20 @@ window.store = Vue.reactive({
     db.collection('config').doc('settings').set({ teamName: this.teamName });
   },
 
+  // ── オーダーパターン ─────────────────────────────
+  lineupPatterns: [],
+  saveLineupPatterns(patterns) {
+    this.lineupPatterns = patterns;
+    db.collection('config').doc('lineupPatterns').set({ patterns });
+  },
+  loadLineupPatterns(callback) {
+    db.collection('config').doc('lineupPatterns').get().then(doc => {
+      const patterns = doc.exists ? (doc.data().patterns || []) : [];
+      this.lineupPatterns = patterns;
+      if (callback) callback(patterns);
+    });
+  },
+
   // ── メンバー ──────────────────────────────────
   addMember(m) {
     const id = generateId();

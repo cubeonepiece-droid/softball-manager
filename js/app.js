@@ -1577,25 +1577,31 @@ const LineupSim = {
     }
 
     function loadDraft() {
-      try {
-        const saved = JSON.parse(localStorage.getItem(SIM_PATTERNS_KEY));
+      store.loadLineupPatterns(saved => {
         if (saved && saved.length) {
           patterns.value = saved;
           activePatternIdx.value = 0;
           applyPattern(saved[0]);
-          return;
+        } else {
+          // legacy localStorage
+          try {
+            const old = JSON.parse(localStorage.getItem(SIM_DRAFT_KEY) || 'null') ||
+                        JSON.parse(localStorage.getItem(SIM_PATTERNS_KEY) || 'null');
+            if (old) {
+              const list = Array.isArray(old) ? old : [{ ...makePattern('パターンA'), ...old }];
+              patterns.value = list;
+              applyPattern(list[0]);
+              return;
+            }
+          } catch(e) {}
+          patterns.value = [makePattern('パターンA')];
+          applyPattern(patterns.value[0]);
         }
-        // legacy
-        const old = JSON.parse(localStorage.getItem(SIM_DRAFT_KEY) || 'null');
-        const p = makePattern('パターンA');
-        if (old) { p.useDP = old.useDP||false; p.lineup = old.lineup||p.lineup; p.fpMemberId = old.fpMemberId||''; p.fpPosition = old.fpPosition||''; }
-        patterns.value = [p];
-        applyPattern(p);
-      } catch(e) { patterns.value = [makePattern('パターンA')]; applyPattern(patterns.value[0]); }
+      });
     }
     function saveDraft() {
       syncActivePattern();
-      localStorage.setItem(SIM_PATTERNS_KEY, JSON.stringify(patterns.value));
+      store.saveLineupPatterns(JSON.parse(JSON.stringify(patterns.value)));
       alert('オーダーを保存しました');
     }
     function clearDraft() {
@@ -1603,7 +1609,7 @@ const LineupSim = {
       lineup.value = emptyLineup();
       fpMemberId.value = ''; fpPosition.value = ''; useDP.value = false;
       syncActivePattern();
-      localStorage.setItem(SIM_PATTERNS_KEY, JSON.stringify(patterns.value));
+      store.saveLineupPatterns(JSON.parse(JSON.stringify(patterns.value)));
     }
 
     onMounted(loadDraft);
