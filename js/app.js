@@ -798,7 +798,7 @@ const EventDetail = {
       const attending  = all.filter(m => getAttStatus(m.id) === 'attending').length;
       const absent     = all.filter(m => getAttStatus(m.id) === 'absent').length;
       const undecided  = all.filter(m => { const a = attendance.value.find(x=>x.memberId===m.id); return a && a.status==='unknown'; }).length;
-      const notEntered = all.filter(m => !attendance.value.find(x=>x.memberId===m.id)).length;
+      const notEntered = all.filter(m => (!m.type||m.type==='player') && !attendance.value.find(x=>x.memberId===m.id)).length;
       return { attending, absent, undecided, notEntered, total: all.length };
     });
 
