@@ -4,15 +4,15 @@ const { createApp, ref, computed, reactive, onMounted, watch, nextTick } = Vue;
 
 // ── 定数 ──────────────────────────────────────────
 const POSITIONS = [
-  { code: 'P',  label: '投手' },
-  { code: 'C',  label: '捕手' },
-  { code: '1B', label: '一塁' },
-  { code: '2B', label: '二塁' },
-  { code: '3B', label: '三塁' },
-  { code: 'SS', label: '遊撃' },
-  { code: 'LF', label: '左翼' },
-  { code: 'CF', label: '中堅' },
-  { code: 'RF', label: '右翼' },
+  { code: 'P',  label: 'ピッチャー' },
+  { code: 'C',  label: 'キャッチャー' },
+  { code: '1B', label: 'ファースト' },
+  { code: '2B', label: 'セカンド' },
+  { code: '3B', label: 'サード' },
+  { code: 'SS', label: 'ショート' },
+  { code: 'LF', label: 'レフト' },
+  { code: 'CF', label: 'センター' },
+  { code: 'RF', label: 'ライト' },
 ];
 const GRADES = [1, 2, 3, 4, 5, 6];
 const MEMBER_TYPES = [
@@ -42,15 +42,15 @@ function memberShortName(m) { return m ? (m.shortName || m.name || '') : ''; }
 function memberFullName(m)  { return m ? (m.name || '') : ''; }
 
 const FIELD_POSITIONS = [
-  { code: 'CF', label: '中堅', x: 160, y:  34 },
-  { code: 'LF', label: '左翼', x:  68, y:  70 },
-  { code: 'RF', label: '右翼', x: 252, y:  70 },
-  { code: 'SS', label: '遊撃', x: 120, y: 112 },
-  { code: '2B', label: '二塁', x: 200, y: 112 },
-  { code: '3B', label: '三塁', x:  86, y: 162 },
-  { code: '1B', label: '一塁', x: 234, y: 162 },
-  { code: 'P',  label: '投手', x: 160, y: 152 },
-  { code: 'C',  label: '捕手', x: 160, y: 220 },
+  { code: 'CF', label: 'センター',     x: 160, y:  34 },
+  { code: 'LF', label: 'レフト',       x:  68, y:  70 },
+  { code: 'RF', label: 'ライト',       x: 252, y:  70 },
+  { code: 'SS', label: 'ショート',     x: 120, y: 112 },
+  { code: '2B', label: 'セカンド',     x: 200, y: 112 },
+  { code: '3B', label: 'サード',       x:  86, y: 162 },
+  { code: '1B', label: 'ファースト',   x: 234, y: 162 },
+  { code: 'P',  label: 'ピッチャー',   x: 160, y: 152 },
+  { code: 'C',  label: 'キャッチャー', x: 160, y: 220 },
 ];
 
 const AT_BAT_RESULTS = [
