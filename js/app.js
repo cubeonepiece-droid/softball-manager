@@ -902,6 +902,8 @@ const EventDetail = {
       if (!ev.value || !isGameType(ev.value.type)) return playerMembers.value;
       const attendingIds = new Set(attendance.value.filter(a => a.status === 'attending').map(a => a.memberId));
       const lineupIds = new Set(lineup.value.filter(l => l.memberId).map(l => l.memberId));
+      // 参加者が誰も登録されていない場合は全選手を表示
+      if (attendingIds.size === 0 && lineupIds.size === 0) return playerMembers.value;
       return playerMembers.value.filter(m => attendingIds.has(m.id) || lineupIds.has(m.id));
     });
     const benchMembers = computed(() => {
