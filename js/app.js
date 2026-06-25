@@ -1607,11 +1607,6 @@ const Stats = {
         <input type="file" accept=".json" class="hidden" @change="importFile">
       </label>
     </div>
-    <!-- ローカルデータ移行ボタン（旧バージョンからの引き継ぎ用） -->
-    <button @click="migrateFromLocal" class="w-full bg-amber-500 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-amber-600">
-      🔄 このPCのデータをクラウドに移行
-    </button>
-    <p class="text-xs text-gray-400 mt-2 text-center">旧バージョンのデータをFirestoreに一括移行します</p>
   </div>
 </div>
   `,
@@ -1625,15 +1620,6 @@ const Stats = {
         alert(ok ? 'インポートしました！' : 'ファイルの形式が正しくありません');
       };
       reader.readAsText(file);
-    },
-    migrateFromLocal() {
-      const LOCAL_KEY = 'softball_v1';
-      const raw = localStorage.getItem(LOCAL_KEY);
-      if (!raw) return alert('このPCにローカルデータが見つかりませんでした。');
-      if (!confirm('このPCのデータをクラウドに移行しますか？\n（既存のクラウドデータとマージされます）')) return;
-      const ok = store.importData(raw);
-      if (ok) alert('移行完了！\nスマホや他のPCでも同じデータが見られます。');
-      else alert('移行に失敗しました。');
     }
   }
 };
