@@ -50,6 +50,32 @@ const FIELD_POSITIONS = [
   { code: 'C',  label: '捕手', x: 160, y: 220 },
 ];
 
+const AT_BAT_RESULTS = [
+  { code: 'H',   label: 'H',   sub: 'ヒット',   color: 'green'  },
+  { code: '2B',  label: '2B',  sub: '二塁打',   color: 'green'  },
+  { code: '3B',  label: '3B',  sub: '三塁打',   color: 'green'  },
+  { code: 'HR',  label: 'HR',  sub: 'ホームラン', color: 'yellow' },
+  { code: 'BB',  label: 'BB',  sub: '四球',     color: 'blue'   },
+  { code: 'HBP', label: 'HBP', sub: '死球',     color: 'blue'   },
+  { code: 'K',   label: 'K',   sub: '三振',     color: 'red'    },
+  { code: 'KL',  label: 'KL',  sub: '見逃三振', color: 'red'    },
+  { code: 'GO',  label: 'GO',  sub: 'ゴロ',     color: 'gray'   },
+  { code: 'FO',  label: 'FO',  sub: 'フライ',   color: 'gray'   },
+  { code: 'LO',  label: 'LO',  sub: 'ライナー', color: 'gray'   },
+  { code: 'SAC', label: '犠',  sub: '犠打',     color: 'purple' },
+  { code: 'SF',  label: '犠飛', sub: '犠牲フライ', color: 'purple' },
+  { code: 'E',   label: 'E',   sub: 'エラー',   color: 'orange' },
+  { code: 'FC',  label: 'FC',  sub: 'フィルダースチョイス', color: 'orange' },
+  { code: 'DP',  label: 'DP',  sub: 'ダブルプレー', color: 'red' },
+];
+
+function abResultColor(code) {
+  const r = AT_BAT_RESULTS.find(x => x.code === code);
+  if (!r) return 'bg-gray-100 text-gray-600';
+  const map = { green: 'bg-green-100 text-green-700', yellow: 'bg-yellow-100 text-yellow-700', blue: 'bg-blue-100 text-blue-700', red: 'bg-red-100 text-red-600', gray: 'bg-gray-100 text-gray-600', purple: 'bg-purple-100 text-purple-700', orange: 'bg-orange-100 text-orange-700' };
+  return map[r.color] || 'bg-gray-100 text-gray-600';
+}
+
 function posLabel(code) {
   const p = POSITIONS.find(p => p.code === code);
   return p ? p.label : code;
@@ -321,7 +347,7 @@ const Schedule = {
     const modal = ref(false);
     const editing = ref(null);
     const form = reactive({
-      type: 'game', date: '', time: '09:00', opponent: '', location: '', homeAway: 'home', innings: 7, notes: ''
+      type: 'practice', date: '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 7, notes: ''
     });
 
     function prevMonth() {
@@ -364,7 +390,7 @@ const Schedule = {
     }
     function openAdd(d) {
       editing.value = null;
-      Object.assign(form, { type: 'practice', date: d ? dateStr(d) : '', time: '09:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 7, notes: '' });
+      Object.assign(form, { type: 'practice', date: d ? dateStr(d) : '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 7, notes: '' });
       modal.value = true;
     }
     function openEdit(ev) {
@@ -517,7 +543,7 @@ const EventDetail = {
   props: ['eventId'],
   setup(props) {
     const ev = computed(() => store.getEvent(props.eventId));
-    const tab = ref('score'); // 'score' | 'lineup'
+    const tab = ref('attendance'); // default attendance; game events switch to score
 
     // スコア編集用ローカルコピー
     const scoreUs   = ref([]);
@@ -533,6 +559,13 @@ const EventDetail = {
     // 出欠
     const attendance = ref([]); // [{ memberId, status }]
 
+    // 打席・投手記録
+    const atBats     = ref([]); // [{ memberId, inning, result }]
+    const pitcherLog = ref([]); // [{ memberId, fromInning, toInning }]
+    const abModal    = ref(null); // { memberId, inning } — 打席入力中
+    const pitcherModal = ref(false);
+    const pitcherInningEdit = ref({ memberId: '', fromInning: 1, toInning: 1 });
+
     function initFromEvent() {
       if (!ev.value) return;
       const e = ev.value;
@@ -545,6 +578,9 @@ const EventDetail = {
       fpPosition.value = e.fpPosition || '';
       useDP.value      = e.useDP || false;
       attendance.value = JSON.parse(JSON.stringify(e.attendance || []));
+      atBats.value     = JSON.parse(JSON.stringify(e.atBats     || []));
+      pitcherLog.value = JSON.parse(JSON.stringify(e.pitcherLog || []));
+      tab.value = isGameType(e.type) ? 'score' : 'attendance';
     }
 
     onMounted(initFromEvent);
@@ -611,10 +647,57 @@ const EventDetail = {
 
     const attSummary = computed(() => {
       const all = store.members;
-      const attending = all.filter(m => getAttStatus(m.id) === 'attending').length;
-      const absent    = all.filter(m => getAttStatus(m.id) === 'absent').length;
-      return { attending, absent, unknown: all.length - attending - absent, total: all.length };
+      const attending  = all.filter(m => getAttStatus(m.id) === 'attending').length;
+      const absent     = all.filter(m => getAttStatus(m.id) === 'absent').length;
+      const undecided  = all.filter(m => { const a = attendance.value.find(x=>x.memberId===m.id); return a && a.status==='unknown'; }).length;
+      const notEntered = all.filter(m => !attendance.value.find(x=>x.memberId===m.id)).length;
+      return { attending, absent, undecided, notEntered, total: all.length };
     });
+
+    // ── 打席・投手記録 ──
+    function getMemberAtBats(memberId) {
+      return atBats.value.filter(a => a.memberId === memberId).sort((a, b) => a.inning - b.inning);
+    }
+    function openAbModal(memberId, inning) {
+      abModal.value = { memberId, inning };
+    }
+    function setAbResult(code) {
+      if (!abModal.value) return;
+      const { memberId, inning } = abModal.value;
+      const idx = atBats.value.findIndex(a => a.memberId === memberId && a.inning === inning);
+      if (code === null) {
+        if (idx !== -1) atBats.value.splice(idx, 1);
+      } else {
+        if (idx !== -1) atBats.value[idx].result = code;
+        else atBats.value.push({ memberId, inning, result: code });
+      }
+      abModal.value = null;
+    }
+    function addAbInning(memberId) {
+      // 次の打席のイニング（まだ記録のない最小イニング）
+      const used = atBats.value.filter(a => a.memberId === memberId).map(a => a.inning);
+      let next = 1;
+      while (used.includes(next)) next++;
+      openAbModal(memberId, Math.min(next, innings.value));
+    }
+    function saveRecord() {
+      store.updateEvent(props.eventId, { atBats: [...atBats.value], pitcherLog: [...pitcherLog.value] });
+      alert('記録を保存しました');
+    }
+    function addPitcher() {
+      pitcherInningEdit.value = { memberId: '', fromInning: 1, toInning: innings.value };
+      pitcherModal.value = true;
+    }
+    function savePitcher() {
+      const p = pitcherInningEdit.value;
+      if (!p.memberId) return;
+      pitcherLog.value.push({ memberId: p.memberId, fromInning: Number(p.fromInning), toInning: Number(p.toInning) });
+      pitcherModal.value = false;
+    }
+    function removePitcher(idx) { pitcherLog.value.splice(idx, 1); }
+
+    const inningNums = computed(() => Array.from({ length: innings.value }, (_, i) => i + 1));
+    const orderedLineup = computed(() => lineup.value.filter(l => l.memberId).sort((a, b) => a.order - b.order));
 
     // ── シミュレーション ──
     const selectedPos = ref(null);
@@ -646,7 +729,7 @@ const EventDetail = {
     }
     const playerMembers = computed(() => store.members.filter(m => !m.type || m.type === 'player'));
 
-    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, isGameType, eventTypeLabel, memberShortName };
+    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, isGameType, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -670,17 +753,13 @@ const EventDetail = {
     </div>
   </div>
 
-  <!-- 練習の場合はここまで -->
-  <div v-if="ev.type==='practice'" class="text-center py-8 text-gray-400">
-    <p>練習の記録はメモ欄を活用してください</p>
-    <p class="mt-2 text-sm">{{ ev.notes }}</p>
-  </div>
-
   <div>
     <!-- タブ -->
     <div class="flex mb-4 bg-gray-100 rounded-xl p-1 gap-0.5">
       <button v-if="isGameType(ev.type)" @click="tab='score'" :class="tab==='score'?'bg-white shadow text-indigo-700':'text-gray-500'"
               class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all">スコア</button>
+      <button v-if="isGameType(ev.type)" @click="tab='record'" :class="tab==='record'?'bg-white shadow text-indigo-700':'text-gray-500'"
+              class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all">記録</button>
       <button v-if="isGameType(ev.type)" @click="tab='lineup'" :class="tab==='lineup'?'bg-white shadow text-indigo-700':'text-gray-500'"
               class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all">オーダー</button>
       <button @click="tab='attendance'" :class="tab==='attendance'?'bg-white shadow text-indigo-700':'text-gray-500'"
@@ -811,18 +890,22 @@ const EventDetail = {
     <!-- ===== 出欠タブ ===== -->
     <div v-if="tab==='attendance'">
       <!-- サマリー -->
-      <div class="flex gap-3 mb-4">
-        <div class="flex-1 bg-green-50 rounded-xl p-3 text-center">
-          <p class="text-2xl font-bold text-green-600">{{ attSummary.attending }}</p>
-          <p class="text-xs text-gray-500 mt-0.5">参加</p>
+      <div class="grid grid-cols-4 gap-2 mb-4">
+        <div class="bg-green-50 rounded-xl p-2 text-center">
+          <p class="text-xl font-bold text-green-600">{{ attSummary.attending }}</p>
+          <p class="text-xs text-gray-500">参加</p>
         </div>
-        <div class="flex-1 bg-red-50 rounded-xl p-3 text-center">
-          <p class="text-2xl font-bold text-red-500">{{ attSummary.absent }}</p>
-          <p class="text-xs text-gray-500 mt-0.5">不参加</p>
+        <div class="bg-red-50 rounded-xl p-2 text-center">
+          <p class="text-xl font-bold text-red-500">{{ attSummary.absent }}</p>
+          <p class="text-xs text-gray-500">不参加</p>
         </div>
-        <div class="flex-1 bg-gray-50 rounded-xl p-3 text-center">
-          <p class="text-2xl font-bold text-gray-400">{{ attSummary.unknown }}</p>
-          <p class="text-xs text-gray-500 mt-0.5">未定</p>
+        <div class="bg-amber-50 rounded-xl p-2 text-center">
+          <p class="text-xl font-bold text-amber-500">{{ attSummary.undecided }}</p>
+          <p class="text-xs text-gray-500">未定</p>
+        </div>
+        <div class="bg-slate-50 rounded-xl p-2 text-center">
+          <p class="text-xl font-bold text-slate-400">{{ attSummary.notEntered }}</p>
+          <p class="text-xs text-gray-500">未入力</p>
         </div>
       </div>
 
@@ -839,16 +922,18 @@ const EventDetail = {
             <p class="text-sm font-medium text-gray-800">{{ m.name }}</p>
             <p v-if="m.grade" class="text-xs text-gray-400">{{ m.grade }}年生</p>
           </div>
-          <div class="flex gap-2">
+          <div class="flex gap-1.5">
             <button @click="setAttStatus(m.id,'attending')"
                     :class="getAttStatus(m.id)==='attending'?'bg-green-500 text-white':'bg-gray-100 text-gray-500'"
-                    class="px-3 py-1.5 rounded-lg text-sm font-bold">○</button>
+                    class="w-9 h-9 rounded-lg text-sm font-bold">○</button>
             <button @click="setAttStatus(m.id,'absent')"
                     :class="getAttStatus(m.id)==='absent'?'bg-red-500 text-white':'bg-gray-100 text-gray-500'"
-                    class="px-3 py-1.5 rounded-lg text-sm font-bold">×</button>
+                    class="w-9 h-9 rounded-lg text-sm font-bold">×</button>
             <button @click="setAttStatus(m.id,'unknown')"
-                    :class="getAttStatus(m.id)==='unknown'?'bg-gray-400 text-white':'bg-gray-100 text-gray-400'"
-                    class="px-3 py-1.5 rounded-lg text-sm font-bold">?</button>
+                    :class="getAttStatus(m.id)==='unknown'?'bg-amber-400 text-white':'bg-gray-100 text-gray-400'"
+                    class="w-9 h-9 rounded-lg text-xs font-bold">未定</button>
+            <span v-if="!attendance.find(a=>a.memberId===m.id)"
+                  class="w-9 h-9 rounded-lg text-xs font-bold bg-slate-100 text-slate-300 flex items-center justify-center">未</span>
           </div>
         </div>
       </div>
@@ -856,6 +941,109 @@ const EventDetail = {
       <button @click="saveAttendance" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 mt-2">
         出欠を保存
       </button>
+    </div>
+
+    <!-- ===== 記録タブ ===== -->
+    <div v-if="tab==='record'">
+      <!-- 投手記録 -->
+      <div class="bg-white rounded-2xl shadow mb-4 overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 flex items-center justify-between">
+          <span class="text-xs font-semibold text-gray-500">投手記録</span>
+          <button @click="addPitcher" class="text-xs text-indigo-600 font-semibold">＋ 追加</button>
+        </div>
+        <div v-if="pitcherLog.length===0" class="px-4 py-4 text-xs text-gray-400">未入力</div>
+        <div v-for="(p, i) in pitcherLog" :key="i" class="flex items-center px-4 py-2.5 border-b last:border-0 gap-3">
+          <div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs flex-shrink-0">P</div>
+          <div class="flex-1">
+            <p class="text-sm font-medium">{{ memberShortName(store.getMember(p.memberId)) }}</p>
+            <p class="text-xs text-gray-400">{{ p.fromInning }}回〜{{ p.toInning }}回</p>
+          </div>
+          <button @click="removePitcher(i)" class="text-red-400 text-xs">削除</button>
+        </div>
+      </div>
+
+      <!-- 打席結果 -->
+      <div class="bg-white rounded-2xl shadow mb-4 overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-500">打席結果</div>
+        <div v-if="orderedLineup.length===0" class="px-4 py-4 text-xs text-gray-400">オーダーを先に設定してください</div>
+        <div v-for="entry in orderedLineup" :key="entry.memberId"
+             class="flex items-start px-3 py-3 border-b last:border-0 gap-2">
+          <div class="flex-shrink-0 w-6 text-center">
+            <span class="text-xs font-bold text-indigo-600">{{ entry.order }}</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium mb-1.5">{{ memberShortName(store.getMember(entry.memberId)) }}</p>
+            <div class="flex flex-wrap gap-1.5">
+              <!-- 既存打席 -->
+              <button v-for="ab in getMemberAtBats(entry.memberId)" :key="ab.inning"
+                      @click="openAbModal(entry.memberId, ab.inning)"
+                      :class="abResultColor(ab.result)"
+                      class="px-2 py-1 rounded-lg text-xs font-bold">
+                {{ ab.result }}<span class="text-xs opacity-60 ml-0.5">{{ ab.inning }}</span>
+              </button>
+              <!-- 追加ボタン -->
+              <button @click="addAbInning(entry.memberId)"
+                      class="px-2 py-1 rounded-lg text-xs bg-gray-100 text-gray-400 font-bold">＋</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button @click="saveRecord" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700">
+        記録を保存
+      </button>
+
+      <!-- 打席入力モーダル -->
+      <div v-if="abModal" class="fixed inset-x-4 bottom-20 bg-white rounded-2xl shadow-2xl border p-4 z-50">
+        <p class="text-sm font-bold mb-3 text-gray-700">
+          {{ memberShortName(store.getMember(abModal.memberId)) }} — {{ abModal.inning }}回の結果
+        </p>
+        <div class="grid grid-cols-4 gap-2 mb-3">
+          <button v-for="r in AT_BAT_RESULTS" :key="r.code"
+                  @click="setAbResult(r.code)"
+                  :class="abResultColor(r.code)"
+                  class="py-2 rounded-lg text-xs font-bold flex flex-col items-center gap-0.5">
+            <span class="font-bold">{{ r.label }}</span>
+            <span class="text-xs opacity-70">{{ r.sub }}</span>
+          </button>
+        </div>
+        <div class="flex gap-2">
+          <button @click="setAbResult(null)" class="flex-1 py-2 border rounded-lg text-sm text-red-400 hover:bg-red-50">削除</button>
+          <button @click="abModal=null" class="flex-1 py-2 border rounded-lg text-sm text-gray-500 hover:bg-gray-50">キャンセル</button>
+        </div>
+      </div>
+
+      <!-- 投手追加モーダル -->
+      <div v-if="pitcherModal" class="fixed inset-x-4 bottom-20 bg-white rounded-2xl shadow-2xl border p-4 z-50">
+        <p class="text-sm font-bold mb-3">投手を登録</p>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">投手</label>
+            <select v-model="pitcherInningEdit.memberId" class="w-full border rounded-lg px-3 py-2 text-sm">
+              <option value="">選択</option>
+              <option v-for="m in playerMembers" :key="m.id" :value="m.id">{{ memberShortName(m) }}</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">開始回</label>
+              <select v-model="pitcherInningEdit.fromInning" class="w-full border rounded-lg px-3 py-2 text-sm">
+                <option v-for="n in inningNums" :key="n" :value="n">{{ n }}回</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">終了回</label>
+              <select v-model="pitcherInningEdit.toInning" class="w-full border rounded-lg px-3 py-2 text-sm">
+                <option v-for="n in inningNums" :key="n" :value="n">{{ n }}回</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="flex gap-2 mt-4">
+          <button @click="pitcherModal=false" class="flex-1 py-2 border rounded-lg text-sm text-gray-500">キャンセル</button>
+          <button @click="savePitcher" class="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold">登録</button>
+        </div>
+      </div>
     </div>
 
     <!-- ===== シミュレーションタブ ===== -->

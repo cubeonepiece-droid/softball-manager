@@ -66,6 +66,8 @@ window.store = Vue.reactive({
       fpPosition: '',  // FP守備位置
       useDP: false,
       attendance: [],  // [{ memberId, status: 'attending'|'absent'|'unknown' }]
+      atBats: [],      // [{ memberId, inning, result }]
+      pitcherLog: [],  // [{ memberId, fromInning, toInning }]
       result: null,    // 'win'|'lose'|'draw'|null
       notes: '',
       ...e,
