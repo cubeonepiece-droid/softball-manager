@@ -699,8 +699,8 @@ const EventDetail = {
       const e = ev.value;
       innings.value   = e.innings || 7;
       const len = innings.value;
-      scoreUs.value   = Array.from({ length: len }, (_, i) => e.score?.us?.[i]   ?? 0);
-      scoreThem.value = Array.from({ length: len }, (_, i) => e.score?.them?.[i] ?? 0);
+      scoreUs.value   = Array.from({ length: len }, (_, i) => { const v = e.score?.us?.[i];   return v === undefined ? 0 : v; });
+      scoreThem.value = Array.from({ length: len }, (_, i) => { const v = e.score?.them?.[i]; return v === undefined ? 0 : v; });
       const savedLineup = e.lineup?.length ? JSON.parse(JSON.stringify(e.lineup)).slice(0, 9) : [];
       lineup.value = savedLineup.length ? savedLineup : Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false }));
       fpMemberId.value = e.fpMemberId || '';
@@ -728,7 +728,7 @@ const EventDetail = {
     });
 
     function saveScore() {
-      const score = { us: scoreUs.value.map(Number), them: scoreThem.value.map(Number) };
+      const score = { us: scoreUs.value.map(v => v === null ? null : Number(v)), them: scoreThem.value.map(v => v === null ? null : Number(v)) };
       const result = (scoreUs.value.some(v=>v>0) || scoreThem.value.some(v=>v>0)) ? autoResult.value : null;
       store.updateEvent(props.eventId, { score, innings: innings.value, result });
       alert('スコアを保存しました');
@@ -1053,8 +1053,14 @@ const EventDetail = {
             <tr class="border-t bg-gray-50" v-if="ev.homeAway==='home'">
               <td class="py-2 px-3 font-semibold text-gray-600">{{ ev.opponent||'相手' }}<span class="text-xs font-normal text-gray-400 ml-1">後</span></td>
               <td v-for="(_, i) in scoreThem" :key="i" class="py-1 px-1">
-                <input v-model="scoreThem[i]" type="number" min="0" max="99"
-                       class="w-9 text-center border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-gray-50">
+                <div v-if="scoreThem[i] === null" @click="scoreThem[i] = 0"
+                     class="w-9 h-8 flex items-center justify-center border rounded-lg bg-gray-200 text-gray-500 font-bold cursor-pointer text-sm select-none">×</div>
+                <div v-else class="relative">
+                  <input v-model="scoreThem[i]" type="number" min="0" max="99"
+                         class="w-9 text-center border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-gray-50">
+                  <button @click="scoreThem[i] = null"
+                          class="absolute -top-1.5 -right-1.5 w-4 h-4 bg-gray-400 hover:bg-gray-500 rounded-full text-white text-xs flex items-center justify-center leading-none">×</button>
+                </div>
               </td>
               <td class="text-center font-bold text-gray-600 text-base">{{ totalThem }}</td>
             </tr>
@@ -1070,8 +1076,14 @@ const EventDetail = {
             <tr class="border-t bg-gray-50" v-if="ev.homeAway==='away'">
               <td class="py-2 px-3 font-semibold text-indigo-700">{{ store.teamName }}<span class="text-xs font-normal text-indigo-400 ml-1">後</span></td>
               <td v-for="(_, i) in scoreUs" :key="i" class="py-1 px-1">
-                <input v-model="scoreUs[i]" type="number" min="0" max="99"
-                       class="w-9 text-center border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-gray-50">
+                <div v-if="scoreUs[i] === null" @click="scoreUs[i] = 0"
+                     class="w-9 h-8 flex items-center justify-center border rounded-lg bg-gray-200 text-gray-500 font-bold cursor-pointer text-sm select-none">×</div>
+                <div v-else class="relative">
+                  <input v-model="scoreUs[i]" type="number" min="0" max="99"
+                         class="w-9 text-center border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-gray-50">
+                  <button @click="scoreUs[i] = null"
+                          class="absolute -top-1.5 -right-1.5 w-4 h-4 bg-gray-400 hover:bg-gray-500 rounded-full text-white text-xs flex items-center justify-center leading-none">×</button>
+                </div>
               </td>
               <td class="text-center font-bold text-indigo-700 text-base">{{ totalUs }}</td>
             </tr>
