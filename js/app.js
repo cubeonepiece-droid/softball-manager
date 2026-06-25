@@ -553,6 +553,7 @@ const Schedule = {
           <span v-if="ev.timeOfDay" class="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">{{ timeOfDayLabel(ev.type, ev.timeOfDay) }}</span>
           <span v-if="ev.transport==='bicycle'" class="text-xs bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full font-medium">🚲 自転車</span>
           <span v-if="ev.transport==='car'" class="text-xs bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full font-medium">🚗 車</span>
+          <span v-if="ev.transport==='train'" class="text-xs bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full font-medium">🚃 電車</span>
         </div>
         <p class="text-xs text-gray-500 truncate">{{ isGameType(ev.type)?(ev.opponent||'相手未定')+(ev.location?' @ '+ev.location:'') : isSocialType(ev.type)?(ev.opponent||'イベント')+(ev.location?' @ '+ev.location:'') : (ev.location||'場所未定') }}</p>
         <a v-if="hasMapLink(ev.type) && ev.location" :href="googleMapsUrl(ev.location)" target="_blank" @click.stop
@@ -622,7 +623,7 @@ const Schedule = {
         <div v-if="form.type !== 'practice'">
           <label class="block text-sm font-medium text-gray-700 mb-2">交通手段</label>
           <div class="flex gap-2">
-            <button v-for="t in [{value:'bicycle',label:'🚲 自転車'},{value:'car',label:'🚗 車'}]" :key="t.value"
+            <button v-for="t in [{value:'bicycle',label:'🚲 自転車'},{value:'car',label:'🚗 車'},{value:'train',label:'🚃 電車'}]" :key="t.value"
                     @click="form.transport = form.transport===t.value ? '' : t.value"
                     :class="form.transport===t.value?'bg-sky-500 text-white':'bg-gray-100 text-gray-700'"
                     class="px-4 py-1.5 rounded-lg text-sm font-medium">{{ t.label }}</button>
@@ -716,8 +717,19 @@ const EventDetail = {
     function saveScore() {
       const score = { us: scoreUs.value.map(Number), them: scoreThem.value.map(Number) };
       const result = (scoreUs.value.some(v=>v>0) || scoreThem.value.some(v=>v>0)) ? autoResult.value : null;
-      store.updateEvent(props.eventId, { score, result });
+      store.updateEvent(props.eventId, { score, innings: innings.value, result });
       alert('スコアを保存しました');
+    }
+    function addInning() {
+      scoreUs.value.push(0);
+      scoreThem.value.push(0);
+      innings.value++;
+    }
+    function removeInning() {
+      if (innings.value <= 1) return;
+      scoreUs.value.pop();
+      scoreThem.value.pop();
+      innings.value--;
     }
 
     function saveLineup() {
@@ -742,7 +754,16 @@ const EventDetail = {
 
     const dpOrder = computed(() => lineup.value.find(l => l.isDP)?.order);
 
-    const sortedMembers = computed(() => [...store.members].filter(m => !m.type || m.type === 'player').sort((a, b) => a.grade - b.grade || a.name.localeCompare(b.name)));
+    const sortedMembers = computed(() => [...store.members].filter(m => !m.type || m.type === 'player').sort((a, b) => {
+      const capA = a.captain ? 0 : a.viceCaptain ? 1 : 2;
+      const capB = b.captain ? 0 : b.viceCaptain ? 1 : 2;
+      if (capA !== capB) return capA - capB;
+      const gradeDiff = (b.grade||0) - (a.grade||0);
+      if (gradeDiff !== 0) return gradeDiff;
+      const ja = a.joinDate||'9999', jb = b.joinDate||'9999';
+      if (ja !== jb) return ja < jb ? -1 : 1;
+      return (Number(a.number)||999) - (Number(b.number)||999);
+    }));
 
     // 出欠管理
     function getAttStatus(memberId) {
@@ -848,7 +869,7 @@ const EventDetail = {
     }
     const playerMembers = computed(() => store.members.filter(m => !m.type || m.type === 'player'));
 
-    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store };
+    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, addInning, removeInning, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -875,7 +896,7 @@ const EventDetail = {
       </div>
       <div v-if="ev.transport" class="col-span-2">
         <span class="text-gray-500">交通手段：</span>
-        <span class="inline-block bg-sky-100 text-sky-700 text-xs px-2 py-0.5 rounded-full font-medium ml-1">{{ ev.transport==='bicycle'?'🚲 自転車':'🚗 車' }}</span>
+        <span class="inline-block bg-sky-100 text-sky-700 text-xs px-2 py-0.5 rounded-full font-medium ml-1">{{ ev.transport==='bicycle'?'🚲 自転車':ev.transport==='train'?'🚃 電車':'🚗 車' }}</span>
       </div>
       <div class="col-span-2">
         <span class="text-gray-500">場所：</span><span class="font-medium">{{ ev.location||'未定' }}</span>
@@ -909,7 +930,16 @@ const EventDetail = {
         &nbsp;{{ totalUs }} - {{ totalThem }}
       </div>
 
-      <div class="bg-white rounded-2xl shadow overflow-hidden mb-4">
+      <div class="flex items-center justify-between mb-2 px-1">
+        <span class="text-sm font-medium text-gray-600">{{ innings }}回</span>
+        <div class="flex gap-2">
+          <button @click="removeInning" :disabled="innings<=1"
+                  class="w-8 h-8 rounded-full bg-gray-200 text-gray-700 font-bold text-lg leading-none disabled:opacity-30">−</button>
+          <button @click="addInning" :disabled="innings>=12"
+                  class="w-8 h-8 rounded-full bg-indigo-500 text-white font-bold text-lg leading-none disabled:opacity-30">＋</button>
+        </div>
+      </div>
+      <div class="bg-white rounded-2xl shadow overflow-x-auto mb-4">
         <table class="w-full text-sm">
           <thead>
             <tr class="bg-gray-50">
@@ -1457,7 +1487,16 @@ const LineupSim = {
   setup() {
     const playerMembers = computed(() => [...store.members]
       .filter(m => !m.type || m.type === 'player')
-      .sort((a, b) => (b.grade||0) - (a.grade||0) || a.name.localeCompare(b.name))
+      .sort((a, b) => {
+        const capA = a.captain ? 0 : a.viceCaptain ? 1 : 2;
+        const capB = b.captain ? 0 : b.viceCaptain ? 1 : 2;
+        if (capA !== capB) return capA - capB;
+        const gradeDiff = (b.grade||0) - (a.grade||0);
+        if (gradeDiff !== 0) return gradeDiff;
+        const ja = a.joinDate||'9999', jb = b.joinDate||'9999';
+        if (ja !== jb) return ja < jb ? -1 : 1;
+        return (Number(a.number)||999) - (Number(b.number)||999);
+      })
     );
 
     // 状態
