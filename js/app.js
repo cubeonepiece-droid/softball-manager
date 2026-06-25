@@ -30,10 +30,13 @@ const EVENT_TYPES = [
   { code: 'scrimmage',  label: '練習試合', color: 'blue'   },
   { code: 'practice',   label: '練習',     color: 'green'  },
   { code: 'joint',      label: '合同練習', color: 'teal'   },
+  { code: 'social',     label: 'イベント', color: 'pink'   },
 ];
 const GAME_TYPES     = ['game', 'tournament', 'scrimmage'];
 const PRACTICE_TYPES = ['practice', 'joint'];
-function isGameType(type) { return GAME_TYPES.includes(type); }
+const SOCIAL_TYPES   = ['social'];
+function isGameType(type)   { return GAME_TYPES.includes(type); }
+function isSocialType(type) { return SOCIAL_TYPES.includes(type); }
 function eventTypeLabel(type) { return EVENT_TYPES.find(t => t.code === type)?.label || type; }
 function memberShortName(m) { return m ? (m.shortName || m.name || '') : ''; }
 function memberFullName(m)  { return m ? (m.name || '') : ''; }
@@ -147,8 +150,8 @@ const Dashboard = {
          @click="navigate('#/events/' + ev.id)"
          class="flex items-center gap-3 py-2 border-b last:border-0 cursor-pointer hover:bg-gray-50 rounded">
       <span class="text-xs px-2 py-1 rounded-full font-semibold"
-            :class="['game','tournament','scrimmage'].includes(ev.type)?'bg-indigo-100 text-indigo-700':'bg-green-100 text-green-700'">
-        {{ {'game':'公式戦','tournament':'大会','scrimmage':'練習試合','practice':'練習','joint':'合同練習'}[ev.type]||'練習' }}
+            :class="['game','tournament','scrimmage'].includes(ev.type)?'bg-indigo-100 text-indigo-700':ev.type==='social'?'bg-pink-100 text-pink-700':'bg-green-100 text-green-700'">
+        {{ {'game':'公式戦','tournament':'大会','scrimmage':'練習試合','practice':'練習','joint':'合同練習','social':'イベント'}[ev.type]||'練習' }}
       </span>
       <div>
         <p class="text-sm font-medium">{{ ev.date }} {{ ev.time }}</p>
@@ -419,7 +422,7 @@ const Schedule = {
       return `bg-${c}-100 text-${c}-700`;
     }
 
-    return { calYear, calMonth, calDays, monthEvents, modal, form, editing, prevMonth, nextMonth, eventsOnDay, isToday, openAdd, openEdit, save, del, goEvent, navigate, EVENT_TYPES, isGameType, eventTypeLabel, selectType, evTypeBadgeClass };
+    return { calYear, calMonth, calDays, monthEvents, modal, form, editing, prevMonth, nextMonth, eventsOnDay, isToday, openAdd, openEdit, save, del, goEvent, navigate, EVENT_TYPES, isGameType, isSocialType, eventTypeLabel, selectType, evTypeBadgeClass };
   },
   template: `
 <div class="max-w-2xl mx-auto px-4 py-6">
@@ -447,7 +450,7 @@ const Schedule = {
         <span>{{ d }}</span>
         <div v-if="d && eventsOnDay(d).length" class="flex gap-0.5 mt-0.5">
           <span v-for="ev in eventsOnDay(d)" :key="ev.id"
-                :class="ev.type==='game'?'bg-indigo-500':'bg-green-500'"
+                :class="['game','tournament','scrimmage'].includes(ev.type)?'bg-indigo-500':ev.type==='social'?'bg-pink-400':'bg-green-500'"
                 class="w-1.5 h-1.5 rounded-full"></span>
         </div>
       </div>
@@ -465,7 +468,7 @@ const Schedule = {
       </span>
       <div class="flex-1 cursor-pointer" @click="goEvent(ev)">
         <p class="text-sm font-medium">{{ ev.date }} {{ ev.time }}</p>
-        <p class="text-xs text-gray-500">{{ isGameType(ev.type)?(ev.opponent||'相手未定')+(ev.location?' @ '+ev.location:'') : (ev.location||'場所未定') }}</p>
+        <p class="text-xs text-gray-500">{{ isGameType(ev.type)?(ev.opponent||'相手未定')+(ev.location?' @ '+ev.location:'') : isSocialType(ev.type)?(ev.opponent||'イベント')+(ev.location?' @ '+ev.location:'') : (ev.location||'場所未定') }}</p>
         <p v-if="isGameType(ev.type) && ev.result" :class="ev.result==='win'?'text-green-600':ev.result==='lose'?'text-red-500':'text-gray-500'"
            class="text-xs font-semibold mt-0.5">
           {{ ev.result==='win'?'● 勝利':ev.result==='lose'?'● 敗戦':'● 引分' }}
@@ -501,6 +504,10 @@ const Schedule = {
             <label class="block text-sm font-medium text-gray-700 mb-1">時間</label>
             <input v-model="form.time" type="time" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
           </div>
+        </div>
+        <div v-if="isSocialType(form.type)">
+          <label class="block text-sm font-medium text-gray-700 mb-1">イベント名 <span class="text-red-500">*</span></label>
+          <input v-model="form.opponent" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="BBQ、卒団式、打ち上げ 等">
         </div>
         <div v-if="isGameType(form.type)">
           <label class="block text-sm font-medium text-gray-700 mb-1">相手チーム</label>
@@ -729,7 +736,7 @@ const EventDetail = {
     }
     const playerMembers = computed(() => store.members.filter(m => !m.type || m.type === 'player'));
 
-    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, isGameType, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store };
+    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, isGameType, isSocialType, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -738,7 +745,7 @@ const EventDetail = {
   <div class="flex items-center gap-3 mb-4">
     <button @click="navigate('#/schedule')" class="text-indigo-600 hover:text-indigo-800 text-sm">◀ 日程</button>
     <h1 class="text-xl font-bold text-gray-800 flex-1">
-      {{ isGameType(ev.type) ? '⚾ ' + eventTypeLabel(ev.type) : '🏋️ ' + eventTypeLabel(ev.type) }}
+      {{ isGameType(ev.type) ? '⚾ ' + eventTypeLabel(ev.type) : isSocialType(ev.type) ? '🎉 ' + (ev.opponent || eventTypeLabel(ev.type)) : '🏋️ ' + eventTypeLabel(ev.type) }}
     </h1>
   </div>
 
@@ -749,6 +756,7 @@ const EventDetail = {
       <div><span class="text-gray-500">時間：</span><span class="font-medium">{{ ev.time }}</span></div>
       <div v-if="isGameType(ev.type)"><span class="text-gray-500">相手：</span><span class="font-medium">{{ ev.opponent||'未定' }}</span></div>
       <div v-if="isGameType(ev.type)"><span class="text-gray-500">H/A：</span><span class="font-medium">{{ ev.homeAway==='home'?'ホーム':'アウェイ' }}</span></div>
+      <div v-if="isSocialType(ev.type)"><span class="text-gray-500">イベント名：</span><span class="font-medium">{{ ev.opponent||'未定' }}</span></div>
       <div><span class="text-gray-500">場所：</span><span class="font-medium">{{ ev.location||'未定' }}</span></div>
     </div>
   </div>
