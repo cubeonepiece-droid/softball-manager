@@ -623,7 +623,7 @@ const EventDetail = {
 
     const dpOrder = computed(() => lineup.value.find(l => l.isDP)?.order);
 
-    const sortedMembers = computed(() => [...store.members].sort((a, b) => a.grade - b.grade || a.name.localeCompare(b.name)));
+    const sortedMembers = computed(() => [...store.members].filter(m => !m.type || m.type === 'player').sort((a, b) => a.grade - b.grade || a.name.localeCompare(b.name)));
 
     // 出欠管理
     function getAttStatus(memberId) {
