@@ -1430,14 +1430,21 @@ const Stats = {
       return { wins, losses, draws, total, winPct, avgUs, avgThem };
     }
 
+    function fiscalYear(dateStr) {
+      if (!dateStr) return null;
+      const [y, m] = dateStr.split('-').map(Number);
+      return m >= 4 ? y : y - 1;
+    }
+
     const availableYears = computed(() => {
-      const years = new Set(store.gameEvents.map(e => e.date?.slice(0, 4)).filter(Boolean));
+      const years = new Set(store.gameEvents.map(e => fiscalYear(e.date)).filter(v => v !== null));
       return [...years].sort().reverse();
     });
 
     function byYear(evs) {
       if (selectedYear.value === 'all') return evs;
-      return evs.filter(e => e.date?.startsWith(selectedYear.value));
+      const fy = Number(selectedYear.value);
+      return evs.filter(e => fiscalYear(e.date) === fy);
     }
 
     const tournamentEvents = computed(() => byYear(store.events.filter(e => e.type==='game'||e.type==='tournament')));
