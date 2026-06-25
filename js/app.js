@@ -882,7 +882,7 @@ const EventDetail = {
         else {
           const empty = lineup.value.find(l => !l.memberId);
           if (empty) { empty.memberId = memberId; empty.position = posCode; }
-          else lineup.value.push({ order: lineup.value.length + 1, memberId, position: posCode, isDP: false });
+          else if (lineup.value.length < 9) lineup.value.push({ order: lineup.value.length + 1, memberId, position: posCode, isDP: false });
         }
       }
       selectedPos.value = null;
@@ -921,8 +921,12 @@ const EventDetail = {
       scoreUs.value = scoreThem.value.slice();
       scoreThem.value = tmp;
     }
+    function swapHomeAway() {
+      swapScores();
+      store.updateEvent(ev.value.id, { homeAway: ev.value.homeAway === 'home' ? 'away' : 'home' });
+    }
 
-    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, addInning, removeInning, swapScores, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, attendingPlayerMembers, benchMembers, availableForEntry, dragFrom, onDragStart, onDragOver, onDrop, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store };
+    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, addInning, removeInning, swapScores, swapHomeAway, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, attendingPlayerMembers, benchMembers, availableForEntry, dragFrom, onDragStart, onDragOver, onDrop, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -996,7 +1000,7 @@ const EventDetail = {
           </span>
         </div>
         <div class="flex gap-2">
-          <button @click="store.updateEvent(ev.id,{homeAway:ev.homeAway==='home'?'away':'home'})"
+          <button @click="swapHomeAway"
                   class="text-xs border border-indigo-300 rounded-lg px-3 py-1.5 text-indigo-600 font-semibold hover:bg-indigo-50">
             ⇄ 先後切替
           </button>
@@ -1027,7 +1031,7 @@ const EventDetail = {
           </thead>
           <tbody>
             <tr class="border-t">
-              <td class="py-2 px-3 font-semibold text-indigo-700">自チーム</td>
+              <td class="py-2 px-3 font-semibold text-indigo-700">{{ store.teamName }}</td>
               <td v-for="(_, i) in scoreUs" :key="i" class="py-1 px-1">
                 <input v-model="scoreUs[i]" type="number" min="0" max="99"
                        class="w-9 text-center border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
@@ -1706,7 +1710,7 @@ const LineupSim = {
         else {
           const empty = lineup.value.find(l => !l.memberId);
           if (empty) { empty.memberId = memberId; empty.position = posCode; }
-          else lineup.value.push({ order: lineup.value.length + 1, memberId, position: posCode, isDP: false });
+          else if (lineup.value.length < 9) lineup.value.push({ order: lineup.value.length + 1, memberId, position: posCode, isDP: false });
         }
       }
       selectedPos.value = null;
