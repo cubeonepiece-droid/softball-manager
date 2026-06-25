@@ -429,7 +429,7 @@ const Schedule = {
     const modal = ref(false);
     const editing = ref(null);
     const form = reactive({
-      type: 'practice', date: '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 3, timeOfDay: '', notes: ''
+      type: 'practice', date: '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 3, timeOfDay: '', transport: '', notes: ''
     });
 
     function prevMonth() {
@@ -472,19 +472,19 @@ const Schedule = {
     }
     function openAdd(d) {
       editing.value = null;
-      Object.assign(form, { type: 'practice', date: d ? dateStr(d) : '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 3, timeOfDay: '', notes: '' });
+      Object.assign(form, { type: 'practice', date: d ? dateStr(d) : '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 3, timeOfDay: '', transport: '', notes: '' });
       modal.value = true;
     }
     function openEdit(ev) {
       editing.value = ev.id;
       // legacy tournament → game
       const type = ev.type === 'tournament' ? 'game' : (ev.type||'practice');
-      Object.assign(form, { type, date: ev.date, time: ev.time||'', opponent: ev.opponent||'', location: ev.location||'', homeAway: ev.homeAway||'home', innings: ev.innings||3, timeOfDay: ev.timeOfDay||'', notes: ev.notes||'' });
+      Object.assign(form, { type, date: ev.date, time: ev.time||'', opponent: ev.opponent||'', location: ev.location||'', homeAway: ev.homeAway||'home', innings: ev.innings||3, timeOfDay: ev.timeOfDay||'', transport: ev.transport||'', notes: ev.notes||'' });
       modal.value = true;
     }
     function save() {
       if (!form.date) return alert('日付を選択してください');
-      const data = { type: form.type, date: form.date, time: form.time, opponent: form.opponent, location: form.location, homeAway: form.homeAway, innings: Number(form.innings), timeOfDay: form.timeOfDay, notes: form.notes };
+      const data = { type: form.type, date: form.date, time: form.time, opponent: form.opponent, location: form.location, homeAway: form.homeAway, innings: Number(form.innings), timeOfDay: form.timeOfDay, transport: form.type !== 'practice' ? form.transport : '', notes: form.notes };
       if (editing.value) { store.updateEvent(editing.value, data); modal.value = false; }
       else {
         const id = store.addEvent(data);
@@ -551,6 +551,8 @@ const Schedule = {
         <div class="flex items-center gap-1.5 flex-wrap">
           <p class="text-sm font-medium">{{ ev.date }} {{ ev.time }}</p>
           <span v-if="ev.timeOfDay" class="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">{{ timeOfDayLabel(ev.type, ev.timeOfDay) }}</span>
+          <span v-if="ev.transport==='bicycle'" class="text-xs bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full font-medium">🚲 自転車</span>
+          <span v-if="ev.transport==='car'" class="text-xs bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full font-medium">🚗 車</span>
         </div>
         <p class="text-xs text-gray-500 truncate">{{ isGameType(ev.type)?(ev.opponent||'相手未定')+(ev.location?' @ '+ev.location:'') : isSocialType(ev.type)?(ev.opponent||'イベント')+(ev.location?' @ '+ev.location:'') : (ev.location||'場所未定') }}</p>
         <a v-if="hasMapLink(ev.type) && ev.location" :href="googleMapsUrl(ev.location)" target="_blank" @click.stop
@@ -615,6 +617,16 @@ const Schedule = {
           <select v-model="form.innings" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
             <option v-for="n in [1,2,3,4,5,6,7,8,9]" :key="n" :value="n">{{ n }}回</option>
           </select>
+        </div>
+        <!-- 交通手段（練習以外） -->
+        <div v-if="form.type !== 'practice'">
+          <label class="block text-sm font-medium text-gray-700 mb-2">交通手段</label>
+          <div class="flex gap-2">
+            <button v-for="t in [{value:'bicycle',label:'🚲 自転車'},{value:'car',label:'🚗 車'}]" :key="t.value"
+                    @click="form.transport = form.transport===t.value ? '' : t.value"
+                    :class="form.transport===t.value?'bg-sky-500 text-white':'bg-gray-100 text-gray-700'"
+                    class="px-4 py-1.5 rounded-lg text-sm font-medium">{{ t.label }}</button>
+          </div>
         </div>
         <!-- 時間帯タグ -->
         <div v-if="hasTimeOfDay(form.type)">
@@ -860,6 +872,10 @@ const EventDetail = {
       <div v-if="ev.timeOfDay" class="col-span-2">
         <span class="text-gray-500">時間帯：</span>
         <span class="inline-block bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-medium ml-1">{{ timeOfDayLabel(ev.type, ev.timeOfDay) }}</span>
+      </div>
+      <div v-if="ev.transport" class="col-span-2">
+        <span class="text-gray-500">交通手段：</span>
+        <span class="inline-block bg-sky-100 text-sky-700 text-xs px-2 py-0.5 rounded-full font-medium ml-1">{{ ev.transport==='bicycle'?'🚲 自転車':'🚗 車' }}</span>
       </div>
       <div class="col-span-2">
         <span class="text-gray-500">場所：</span><span class="font-medium">{{ ev.location||'未定' }}</span>
