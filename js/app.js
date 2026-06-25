@@ -1030,21 +1030,39 @@ const EventDetail = {
             </tr>
           </thead>
           <tbody>
-            <tr class="border-t">
-              <td class="py-2 px-3 font-semibold text-indigo-700">{{ store.teamName }}</td>
+            <!-- 先攻（上段）: home=先攻なら自チーム、away=後攻なら相手 -->
+            <tr class="border-t" v-if="ev.homeAway==='home'">
+              <td class="py-2 px-3 font-semibold text-indigo-700">{{ store.teamName }}<span class="text-xs font-normal text-indigo-400 ml-1">先</span></td>
               <td v-for="(_, i) in scoreUs" :key="i" class="py-1 px-1">
                 <input v-model="scoreUs[i]" type="number" min="0" max="99"
                        class="w-9 text-center border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
               </td>
               <td class="text-center font-bold text-indigo-700 text-base">{{ totalUs }}</td>
             </tr>
-            <tr class="border-t bg-gray-50">
-              <td class="py-2 px-3 font-semibold text-gray-600">{{ ev.opponent||'相手' }}</td>
+            <tr class="border-t bg-gray-50" v-if="ev.homeAway==='home'">
+              <td class="py-2 px-3 font-semibold text-gray-600">{{ ev.opponent||'相手' }}<span class="text-xs font-normal text-gray-400 ml-1">後</span></td>
               <td v-for="(_, i) in scoreThem" :key="i" class="py-1 px-1">
                 <input v-model="scoreThem[i]" type="number" min="0" max="99"
                        class="w-9 text-center border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-gray-50">
               </td>
               <td class="text-center font-bold text-gray-600 text-base">{{ totalThem }}</td>
+            </tr>
+            <!-- 後攻: 相手が先攻（上段）、自チームが後攻（下段） -->
+            <tr class="border-t" v-if="ev.homeAway==='away'">
+              <td class="py-2 px-3 font-semibold text-gray-600">{{ ev.opponent||'相手' }}<span class="text-xs font-normal text-gray-400 ml-1">先</span></td>
+              <td v-for="(_, i) in scoreThem" :key="i" class="py-1 px-1">
+                <input v-model="scoreThem[i]" type="number" min="0" max="99"
+                       class="w-9 text-center border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+              </td>
+              <td class="text-center font-bold text-gray-600 text-base">{{ totalThem }}</td>
+            </tr>
+            <tr class="border-t bg-gray-50" v-if="ev.homeAway==='away'">
+              <td class="py-2 px-3 font-semibold text-indigo-700">{{ store.teamName }}<span class="text-xs font-normal text-indigo-400 ml-1">後</span></td>
+              <td v-for="(_, i) in scoreUs" :key="i" class="py-1 px-1">
+                <input v-model="scoreUs[i]" type="number" min="0" max="99"
+                       class="w-9 text-center border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-gray-50">
+              </td>
+              <td class="text-center font-bold text-indigo-700 text-base">{{ totalUs }}</td>
             </tr>
           </tbody>
         </table>
