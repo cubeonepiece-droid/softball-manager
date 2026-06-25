@@ -175,7 +175,7 @@ const Dashboard = {
       </span>
       <div>
         <p class="text-sm font-medium">{{ ev.date }} {{ ev.time }}</p>
-        <p class="text-xs text-gray-500">{{ ev.type==='game'? (ev.opponent||'相手未定') : (ev.location||'場所未定') }}</p>
+        <p class="text-xs text-gray-500">{{ ev.type==='game'? ((ev.tournamentName ? ev.tournamentName + ' ' : '') + (ev.opponent||'相手未定')) : (ev.location||'場所未定') }}</p>
       </div>
     </div>
   </div>
@@ -429,7 +429,7 @@ const Schedule = {
     const modal = ref(false);
     const editing = ref(null);
     const form = reactive({
-      type: 'practice', date: '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 3, timeOfDay: '', transport: '', rainCancelled: false, notes: ''
+      type: 'practice', date: '', time: '08:00', opponent: '', tournamentName: '', location: '大東小学校', homeAway: 'home', innings: 3, timeOfDay: '', transport: '', rainCancelled: false, notes: ''
     });
 
     function prevMonth() {
@@ -472,19 +472,19 @@ const Schedule = {
     }
     function openAdd(d) {
       editing.value = null;
-      Object.assign(form, { type: 'practice', date: d ? dateStr(d) : '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 3, timeOfDay: '', transport: '', rainCancelled: false, notes: '' });
+      Object.assign(form, { type: 'practice', date: d ? dateStr(d) : '', time: '08:00', opponent: '', tournamentName: '', location: '大東小学校', homeAway: 'home', innings: 3, timeOfDay: '', transport: '', rainCancelled: false, notes: '' });
       modal.value = true;
     }
     function openEdit(ev) {
       editing.value = ev.id;
       // legacy tournament → game
       const type = ev.type === 'tournament' ? 'game' : (ev.type||'practice');
-      Object.assign(form, { type, date: ev.date, time: ev.time||'', opponent: ev.opponent||'', location: ev.location||'', homeAway: ev.homeAway||'home', innings: ev.innings||3, timeOfDay: ev.timeOfDay||'', transport: ev.transport||'', rainCancelled: ev.rainCancelled||false, notes: ev.notes||'' });
+      Object.assign(form, { type, date: ev.date, time: ev.time||'', opponent: ev.opponent||'', tournamentName: ev.tournamentName||'', location: ev.location||'', homeAway: ev.homeAway||'home', innings: ev.innings||3, timeOfDay: ev.timeOfDay||'', transport: ev.transport||'', rainCancelled: ev.rainCancelled||false, notes: ev.notes||'' });
       modal.value = true;
     }
     function save() {
       if (!form.date) return alert('日付を選択してください');
-      const data = { type: form.type, date: form.date, time: form.time, opponent: form.opponent, location: form.location, homeAway: form.homeAway, innings: Number(form.innings), timeOfDay: form.timeOfDay, transport: form.type !== 'practice' ? form.transport : '', rainCancelled: form.rainCancelled, notes: form.notes };
+      const data = { type: form.type, date: form.date, time: form.time, opponent: form.opponent, tournamentName: form.type === 'game' ? form.tournamentName : '', location: form.location, homeAway: form.homeAway, innings: Number(form.innings), timeOfDay: form.timeOfDay, transport: form.type !== 'practice' ? form.transport : '', rainCancelled: form.rainCancelled, notes: form.notes };
       if (editing.value) { store.updateEvent(editing.value, data); modal.value = false; }
       else {
         const id = store.addEvent(data);
@@ -598,6 +598,10 @@ const Schedule = {
         <div v-if="isSocialType(form.type)">
           <label class="block text-sm font-medium text-gray-700 mb-1">イベント名 <span class="text-red-500">*</span></label>
           <input v-model="form.opponent" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="BBQ、卒団式、打ち上げ 等">
+        </div>
+        <div v-if="form.type==='game'">
+          <label class="block text-sm font-medium text-gray-700 mb-1">大会名</label>
+          <input v-model="form.tournamentName" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="○○大会、○○カップ 等">
         </div>
         <div v-if="isGameType(form.type)">
           <label class="block text-sm font-medium text-gray-700 mb-1">相手チーム</label>
@@ -939,7 +943,7 @@ const EventDetail = {
   <div class="flex items-center gap-3 mb-4">
     <button @click="navigate('#/schedule')" class="text-indigo-600 hover:text-indigo-800 text-sm">◀ 日程</button>
     <h1 class="text-xl font-bold text-gray-800 flex-1">
-      {{ isGameType(ev.type) ? '⚾ ' + eventTypeLabel(ev.type) : isSocialType(ev.type) ? '🎉 ' + (ev.opponent || eventTypeLabel(ev.type)) : '🏋️ ' + eventTypeLabel(ev.type) }}
+      {{ isGameType(ev.type) ? '⚾ ' + (ev.type==='game' && ev.tournamentName ? ev.tournamentName : eventTypeLabel(ev.type)) : isSocialType(ev.type) ? '🎉 ' + (ev.opponent || eventTypeLabel(ev.type)) : '🏋️ ' + eventTypeLabel(ev.type) }}
     </h1>
   </div>
 
@@ -948,6 +952,7 @@ const EventDetail = {
     <div class="grid grid-cols-2 gap-2 text-sm">
       <div><span class="text-gray-500">日付：</span><span class="font-medium">{{ ev.date }}</span></div>
       <div><span class="text-gray-500">時間：</span><span class="font-medium">{{ ev.time }}</span></div>
+      <div v-if="ev.type==='game' && ev.tournamentName"><span class="text-gray-500">大会名：</span><span class="font-medium">{{ ev.tournamentName }}</span></div>
       <div v-if="isGameType(ev.type)"><span class="text-gray-500">相手：</span><span class="font-medium">{{ ev.opponent||'未定' }}</span></div>
       <div v-if="isGameType(ev.type)" class="flex items-center gap-2">
         <span class="text-gray-500">先後：</span><span class="font-medium">{{ ev.homeAway==='home'?'先攻':'後攻' }}</span>
