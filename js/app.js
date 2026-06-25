@@ -225,9 +225,10 @@ const Members = {
 
     const filtered = computed(() => {
       const ms = filterType.value === 'all' ? store.members : store.members.filter(m => (m.type||'player') === filterType.value);
+      const typeOrder = { player: 0, coach: 1, parent: 2 };
       return [...ms].sort((a, b) => {
-        const ta = a.type||'player', tb = b.type||'player';
-        if (ta !== tb) return ta < tb ? -1 : 1;
+        const ta = typeOrder[a.type||'player'] ?? 9, tb = typeOrder[b.type||'player'] ?? 9;
+        if (ta !== tb) return ta - tb;
         const gradeDiff = (a.grade||0) - (b.grade||0);
         if (gradeDiff !== 0) return gradeDiff;
         const ja = a.joinDate||'9999', jb = b.joinDate||'9999';
@@ -1612,7 +1613,7 @@ const App = {
       { href: '#/', label: 'ホーム', icon: '🏠' },
       { href: '#/members', label: 'メンバー', icon: '👥' },
       { href: '#/schedule', label: '日程', icon: '📅' },
-      { href: '#/sim', label: 'ラインナップ', icon: '🎯' },
+      { href: '#/sim', label: 'オーダー', icon: '🎯' },
       { href: '#/stats', label: '成績', icon: '📊' },
     ];
 
