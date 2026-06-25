@@ -305,8 +305,8 @@ const Members = {
       <div class="flex-1 min-w-0">
         <p class="font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
           {{ m.name }}
-          <span v-if="m.captain" class="text-xs px-2 py-0.5 rounded-full font-bold bg-yellow-400 text-yellow-900">👑 C</span>
-          <span v-if="m.viceCaptain" class="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-200 text-orange-800">VC</span>
+          <span v-if="m.captain" class="text-xs px-2 py-0.5 rounded-full font-bold bg-yellow-400 text-yellow-900">👑 キャプテン</span>
+          <span v-if="m.viceCaptain" class="text-xs px-2 py-0.5 rounded-full font-bold bg-yellow-200 text-yellow-800">👑 副キャプテン</span>
           <span :class="typeBadgeClass(m.type)" class="text-xs px-2 py-0.5 rounded-full font-medium">{{ memberTypeLabel(m.type||'player') }}</span>
           <span v-if="m.type==='player'||!m.type" class="text-xs text-gray-500">{{ m.grade }}年生</span>
           <span v-if="m.number" class="text-xs text-gray-400">#{{ m.number }}</span>
@@ -349,15 +349,15 @@ const Members = {
         </div>
         <template v-if="form.type==='player'">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">役職</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2">役割</label>
             <div class="flex gap-3">
               <label class="flex items-center gap-2 cursor-pointer select-none">
                 <input type="checkbox" v-model="form.captain" @change="form.captain && (form.viceCaptain=false)" class="accent-yellow-500 w-4 h-4">
                 <span class="text-sm font-medium">👑 キャプテン</span>
               </label>
               <label class="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" v-model="form.viceCaptain" @change="form.viceCaptain && (form.captain=false)" class="accent-orange-400 w-4 h-4">
-                <span class="text-sm font-medium">VC 副キャプテン</span>
+                <input type="checkbox" v-model="form.viceCaptain" @change="form.viceCaptain && (form.captain=false)" class="accent-yellow-500 w-4 h-4">
+                <span class="text-sm font-medium">👑 副キャプテン</span>
               </label>
             </div>
           </div>
