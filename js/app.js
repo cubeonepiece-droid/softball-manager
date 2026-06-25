@@ -25,10 +25,10 @@ function memberTypeLabel(code) {
 }
 
 const EVENT_TYPES = [
-  { code: 'game',       label: '公式戦',   color: 'indigo' },
-  { code: 'scrimmage',  label: '練習試合', color: 'blue'   },
   { code: 'practice',   label: '練習',     color: 'green'  },
+  { code: 'scrimmage',  label: '練習試合', color: 'blue'   },
   { code: 'joint',      label: '合同練習', color: 'teal'   },
+  { code: 'game',       label: '大会',     color: 'indigo' },
   { code: 'social',     label: 'イベント', color: 'pink'   },
 ];
 const GAME_TYPES     = ['game', 'tournament', 'scrimmage']; // tournament kept for legacy data
@@ -55,7 +55,7 @@ function googleMapsUrl(location) {
   return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(location);
 }
 function eventTypeLabel(type) {
-  if (type === 'tournament') return '公式戦'; // legacy
+  if (type === 'tournament') return '大会'; // legacy
   return EVENT_TYPES.find(t => t.code === type)?.label || type;
 }
 function memberShortName(m) { return m ? (m.shortName || m.name || '') : ''; }
@@ -171,7 +171,7 @@ const Dashboard = {
          class="flex items-center gap-3 py-2 border-b last:border-0 cursor-pointer hover:bg-gray-50 rounded">
       <span class="text-xs px-2 py-1 rounded-full font-semibold"
             :class="['game','tournament','scrimmage'].includes(ev.type)?'bg-indigo-100 text-indigo-700':ev.type==='social'?'bg-pink-100 text-pink-700':'bg-green-100 text-green-700'">
-        {{ {'game':'公式戦','tournament':'公式戦','scrimmage':'練習試合','practice':'練習','joint':'合同練習','social':'イベント'}[ev.type]||'練習' }}
+        {{ {'game':'大会','tournament':'大会','scrimmage':'練習試合','practice':'練習','joint':'合同練習','social':'イベント'}[ev.type]||'練習' }}
       </span>
       <div>
         <p class="text-sm font-medium">{{ ev.date }} {{ ev.time }}</p>
@@ -249,7 +249,7 @@ const Members = {
       return [...ms].sort((a, b) => {
         const ta = typeOrder[a.type||'player'] ?? 9, tb = typeOrder[b.type||'player'] ?? 9;
         if (ta !== tb) return ta - tb;
-        const gradeDiff = (a.grade||0) - (b.grade||0);
+        const gradeDiff = (b.grade||0) - (a.grade||0); // 6年→1年の降順
         if (gradeDiff !== 0) return gradeDiff;
         const ja = a.joinDate||'9999', jb = b.joinDate||'9999';
         if (ja !== jb) return ja < jb ? -1 : 1;
@@ -381,10 +381,10 @@ const Members = {
             </div>
           </div>
         </div>
-        <!-- 入部日 -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">入部日</label>
-          <input v-model="form.joinDate" type="date" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        <!-- 入部年月（選手のみ） -->
+        <div v-if="form.type==='player'">
+          <label class="block text-sm font-medium text-gray-700 mb-1">入部年月</label>
+          <input v-model="form.joinDate" type="month" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">メモ</label>
@@ -410,7 +410,7 @@ const Schedule = {
     const modal = ref(false);
     const editing = ref(null);
     const form = reactive({
-      type: 'practice', date: '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 7, timeOfDay: '', notes: ''
+      type: 'practice', date: '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 3, timeOfDay: '', notes: ''
     });
 
     function prevMonth() {
@@ -453,14 +453,14 @@ const Schedule = {
     }
     function openAdd(d) {
       editing.value = null;
-      Object.assign(form, { type: 'practice', date: d ? dateStr(d) : '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 7, timeOfDay: '', notes: '' });
+      Object.assign(form, { type: 'practice', date: d ? dateStr(d) : '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 3, timeOfDay: '', notes: '' });
       modal.value = true;
     }
     function openEdit(ev) {
       editing.value = ev.id;
       // legacy tournament → game
       const type = ev.type === 'tournament' ? 'game' : (ev.type||'practice');
-      Object.assign(form, { type, date: ev.date, time: ev.time||'', opponent: ev.opponent||'', location: ev.location||'', homeAway: ev.homeAway||'home', innings: ev.innings||7, timeOfDay: ev.timeOfDay||'', notes: ev.notes||'' });
+      Object.assign(form, { type, date: ev.date, time: ev.time||'', opponent: ev.opponent||'', location: ev.location||'', homeAway: ev.homeAway||'home', innings: ev.innings||3, timeOfDay: ev.timeOfDay||'', notes: ev.notes||'' });
       modal.value = true;
     }
     function save() {
@@ -1405,15 +1405,35 @@ const LineupSim = {
   setup() {
     const playerMembers = computed(() => [...store.members]
       .filter(m => !m.type || m.type === 'player')
-      .sort((a, b) => a.grade - b.grade || a.name.localeCompare(b.name))
+      .sort((a, b) => (b.grade||0) - (a.grade||0) || a.name.localeCompare(b.name))
     );
 
     // 状態
-    const useDP     = ref(false);
-    const lineup    = ref(Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false })));
+    const useDP      = ref(false);
+    const lineup     = ref(Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false })));
     const fpMemberId = ref('');
     const fpPosition = ref('');
     const selectedPos = ref(null);
+
+    // ドラッグ並び替え
+    const dragFrom = ref(null);
+    function onDragStart(idx) { dragFrom.value = idx; }
+    function onDragOver(e) { e.preventDefault(); }
+    function onDrop(idx) {
+      if (dragFrom.value === null || dragFrom.value === idx) { dragFrom.value = null; return; }
+      const arr = lineup.value;
+      const [moved] = arr.splice(dragFrom.value, 1);
+      arr.splice(idx, 0, moved);
+      arr.forEach((l, i) => l.order = i + 1);
+      dragFrom.value = null;
+    }
+
+    // ベンチ外メンバー（打順に未登録の選手）
+    const benchMembers = computed(() => {
+      const assignedIds = new Set(lineup.value.filter(l => l.memberId).map(l => l.memberId));
+      if (useDP.value && fpMemberId.value) assignedIds.add(fpMemberId.value);
+      return playerMembers.value.filter(m => !assignedIds.has(m.id));
+    });
 
     // ドラフト保存・復元
     function loadDraft() {
@@ -1498,7 +1518,7 @@ const LineupSim = {
       navigator.clipboard?.writeText(copyText.value).then(() => alert('コピーしました！'));
     }
 
-    return { playerMembers, useDP, lineup, fpMemberId, fpPosition, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, setDP, dpOrder, onMemberSelect, saveDraft, clearDraft, showCopy, copyText, copyToClipboard, POSITIONS, posLabel, memberShortName, navigate, store };
+    return { playerMembers, benchMembers, useDP, lineup, fpMemberId, fpPosition, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, setDP, dpOrder, onMemberSelect, saveDraft, clearDraft, showCopy, copyText, copyToClipboard, POSITIONS, posLabel, memberShortName, navigate, store, onDragStart, onDragOver, onDrop, dragFrom };
   },
   template: `
 <div class="max-w-2xl mx-auto px-4 py-6 pb-24">
@@ -1550,15 +1570,25 @@ const LineupSim = {
 
   <!-- 打順テーブル -->
   <div class="bg-white rounded-2xl shadow overflow-hidden mb-4">
-    <div class="grid grid-cols-12 gap-0 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 border-b">
+    <div class="grid gap-0 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 border-b"
+         :class="useDP ? 'grid-cols-12' : 'grid-cols-11'">
+      <div class="col-span-1 text-center">≡</div>
       <div class="col-span-1">#</div>
-      <div class="col-span-5">選手</div>
+      <div class="col-span-4">選手</div>
       <div class="col-span-4">守備位置</div>
       <div v-if="useDP" class="col-span-2 text-center">DP</div>
     </div>
-    <div v-for="entry in lineup" :key="entry.order" class="grid grid-cols-12 gap-1 items-center px-3 py-2 border-b last:border-0">
+    <div v-for="(entry, idx) in lineup" :key="entry.order"
+         draggable="true"
+         @dragstart="onDragStart(idx)"
+         @dragover="onDragOver"
+         @drop="onDrop(idx)"
+         :class="dragFrom===idx ? 'opacity-40' : ''"
+         class="grid gap-1 items-center px-2 py-2 border-b last:border-0 transition-opacity"
+         :style="useDP ? 'grid-template-columns:repeat(12,minmax(0,1fr))' : 'grid-template-columns:repeat(11,minmax(0,1fr))'">
+      <div class="col-span-1 text-center text-gray-400 cursor-grab active:cursor-grabbing text-base select-none">⠿</div>
       <div class="col-span-1 text-sm font-bold text-indigo-600">{{ entry.order }}</div>
-      <div class="col-span-5">
+      <div class="col-span-4">
         <select v-model="entry.memberId" @change="onMemberSelect(entry)"
                 class="w-full border rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
           <option value="">-</option>
@@ -1590,6 +1620,17 @@ const LineupSim = {
           <option v-for="p in POSITIONS" :key="p.code" :value="p.code">{{ p.label }}</option>
         </select>
       </div>
+    </div>
+  </div>
+
+  <!-- ベンチ外メンバー -->
+  <div v-if="benchMembers.length" class="bg-white rounded-2xl shadow p-4 mb-4">
+    <p class="text-xs font-semibold text-gray-500 mb-2">ベンチ外（{{ benchMembers.length }}名）</p>
+    <div class="flex flex-wrap gap-2">
+      <span v-for="m in benchMembers" :key="m.id"
+            class="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full">
+        {{ memberShortName(m) }}({{ m.grade }}年)
+      </span>
     </div>
   </div>
 
