@@ -520,7 +520,7 @@ const Schedule = {
         <div v-if="isGameType(form.type)">
           <label class="block text-sm font-medium text-gray-700 mb-1">イニング数</label>
           <select v-model="form.innings" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
-            <option v-for="n in [5,6,7,9]" :key="n" :value="n">{{ n }}回</option>
+            <option v-for="n in [1,2,3,4,5,6,7,8,9]" :key="n" :value="n">{{ n }}回</option>
           </select>
         </div>
         <div>
@@ -1306,9 +1306,239 @@ const Stats = {
   }
 };
 
+// ── ラインナップシミュレーター ──────────────────
+const SIM_DRAFT_KEY = 'softball_sim_draft';
+const LineupSim = {
+  setup() {
+    const playerMembers = computed(() => [...store.members]
+      .filter(m => !m.type || m.type === 'player')
+      .sort((a, b) => a.grade - b.grade || a.name.localeCompare(b.name))
+    );
+
+    // 状態
+    const useDP     = ref(false);
+    const lineup    = ref(Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false })));
+    const fpMemberId = ref('');
+    const fpPosition = ref('');
+    const selectedPos = ref(null);
+
+    // ドラフト保存・復元
+    function loadDraft() {
+      try {
+        const d = JSON.parse(localStorage.getItem(SIM_DRAFT_KEY) || 'null');
+        if (!d) return;
+        useDP.value      = d.useDP     || false;
+        lineup.value     = d.lineup    || lineup.value;
+        fpMemberId.value = d.fpMemberId || '';
+        fpPosition.value = d.fpPosition || '';
+      } catch(e) {}
+    }
+    function saveDraft() {
+      localStorage.setItem(SIM_DRAFT_KEY, JSON.stringify({
+        useDP: useDP.value, lineup: lineup.value,
+        fpMemberId: fpMemberId.value, fpPosition: fpPosition.value,
+      }));
+      alert('ラインナップを保存しました');
+    }
+    function clearDraft() {
+      if (!confirm('ラインナップをリセットしますか？')) return;
+      lineup.value    = Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false }));
+      fpMemberId.value = '';
+      fpPosition.value = '';
+      useDP.value      = false;
+      localStorage.removeItem(SIM_DRAFT_KEY);
+    }
+
+    onMounted(loadDraft);
+
+    // フィールド図
+    const FIELD_POS_LIST = FIELD_POSITIONS;
+    function simPlayerName(posCode) {
+      const entry = lineup.value.find(l => l.position === posCode);
+      if (entry?.memberId) { const m = store.getMember(entry.memberId); return m ? memberShortName(m) : ''; }
+      if (posCode === fpPosition.value && fpMemberId.value) { const m = store.getMember(fpMemberId.value); return m ? memberShortName(m) : ''; }
+      return '';
+    }
+    function simAssign(posCode, memberId) {
+      lineup.value.forEach(l => { if (l.position === posCode) l.position = ''; });
+      if (memberId) {
+        const existing = lineup.value.find(l => l.memberId === memberId);
+        if (existing) existing.position = posCode;
+        else {
+          const empty = lineup.value.find(l => !l.memberId);
+          if (empty) { empty.memberId = memberId; empty.position = posCode; }
+          else lineup.value.push({ order: lineup.value.length + 1, memberId, position: posCode, isDP: false });
+        }
+      }
+      selectedPos.value = null;
+    }
+
+    function setDP(order) { lineup.value.forEach(l => l.isDP = l.order === order); }
+    const dpOrder = computed(() => lineup.value.find(l => l.isDP)?.order);
+
+    // 打順に選手を設定したとき、ポジションを自動入力
+    function onMemberSelect(entry) {
+      if (!entry.memberId) return;
+      const m = store.getMember(entry.memberId);
+      if (m?.positions?.length && !entry.position) entry.position = m.positions[0];
+    }
+
+    // テキスト出力（LINEやメモアプリへコピー）
+    const showCopy = ref(false);
+    const copyText = computed(() => {
+      const lines = ['【打順・守備】'];
+      lineup.value.filter(l => l.memberId).sort((a,b)=>a.order-b.order).forEach(l => {
+        const m = store.getMember(l.memberId);
+        const name = m ? memberShortName(m) : '?';
+        const pos  = l.position ? posLabel(l.position) : '-';
+        const dp   = l.isDP ? ' [DP]' : '';
+        lines.push(`${l.order}. ${name}（${pos}）${dp}`);
+      });
+      if (useDP.value && fpMemberId.value) {
+        const m = store.getMember(fpMemberId.value);
+        const pos = fpPosition.value ? posLabel(fpPosition.value) : '-';
+        lines.push(`FP. ${m ? memberShortName(m) : '?'}（${pos}）`);
+      }
+      return lines.join('\n');
+    });
+    function copyToClipboard() {
+      navigator.clipboard?.writeText(copyText.value).then(() => alert('コピーしました！'));
+    }
+
+    return { playerMembers, useDP, lineup, fpMemberId, fpPosition, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, setDP, dpOrder, onMemberSelect, saveDraft, clearDraft, showCopy, copyText, copyToClipboard, POSITIONS, posLabel, memberShortName, navigate, store };
+  },
+  template: `
+<div class="max-w-2xl mx-auto px-4 py-6 pb-24">
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-xl font-bold text-gray-800">🎯 ラインナップ</h1>
+    <div class="flex gap-2">
+      <button @click="copyToClipboard" class="text-sm text-indigo-600 font-semibold border border-indigo-300 px-3 py-1.5 rounded-lg hover:bg-indigo-50">コピー</button>
+      <button @click="clearDraft" class="text-sm text-gray-500 border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50">リセット</button>
+    </div>
+  </div>
+
+  <!-- フィールド図 -->
+  <div class="bg-white rounded-2xl shadow overflow-hidden mb-4">
+    <svg viewBox="0 0 320 260" style="width:100%;display:block">
+      <ellipse cx="160" cy="120" rx="152" ry="130" fill="#4ade80" opacity="0.35"/>
+      <polygon points="160,230 252,145 160,58 68,145" fill="#fbbf24" opacity="0.4"/>
+      <line x1="160" y1="230" x2="252" y2="145" stroke="white" stroke-width="1.5"/>
+      <line x1="252" y1="145" x2="160" y2="58" stroke="white" stroke-width="1.5"/>
+      <line x1="160" y1="58" x2="68" y2="145" stroke="white" stroke-width="1.5"/>
+      <line x1="68" y1="145" x2="160" y2="230" stroke="white" stroke-width="1.5"/>
+      <circle cx="160" cy="152" r="9" fill="#d97706" opacity="0.8"/>
+      <rect x="153" y="222" width="14" height="14" fill="white" rx="2"/>
+      <rect x="244" y="137" width="14" height="14" fill="white" rx="2"/>
+      <rect x="153" y="50" width="14" height="14" fill="white" rx="2"/>
+      <rect x="62" y="137" width="14" height="14" fill="white" rx="2"/>
+      <g v-for="fp in FIELD_POS_LIST" :key="fp.code" @click="selectedPos=fp.code" style="cursor:pointer">
+        <circle :cx="fp.x" :cy="fp.y" r="20"
+                :fill="simPlayerName(fp.code)?'#6366f1':'rgba(255,255,255,0.88)'"
+                :stroke="selectedPos===fp.code?'#f59e0b':'#6366f1'"
+                stroke-width="2"/>
+        <text :x="fp.x" :y="fp.y-5" text-anchor="middle" dominant-baseline="middle"
+              font-size="7" :fill="simPlayerName(fp.code)?'#c7d2fe':'#9ca3af'">{{ fp.label }}</text>
+        <text :x="fp.x" :y="fp.y+7" text-anchor="middle" dominant-baseline="middle"
+              font-size="9" font-weight="bold"
+              :fill="simPlayerName(fp.code)?'white':'#6366f1'">
+          {{ simPlayerName(fp.code) || '+' }}
+        </text>
+      </g>
+    </svg>
+  </div>
+
+  <!-- DP/FP -->
+  <div class="bg-white rounded-2xl shadow p-3 mb-4 flex items-center gap-3">
+    <label class="flex items-center gap-2 cursor-pointer select-none">
+      <input type="checkbox" v-model="useDP" class="accent-indigo-600 w-4 h-4">
+      <span class="text-sm font-medium text-gray-700">DP / FP ルールを使用する</span>
+    </label>
+  </div>
+
+  <!-- 打順テーブル -->
+  <div class="bg-white rounded-2xl shadow overflow-hidden mb-4">
+    <div class="grid grid-cols-12 gap-0 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 border-b">
+      <div class="col-span-1">#</div>
+      <div class="col-span-5">選手</div>
+      <div class="col-span-4">守備位置</div>
+      <div v-if="useDP" class="col-span-2 text-center">DP</div>
+    </div>
+    <div v-for="entry in lineup" :key="entry.order" class="grid grid-cols-12 gap-1 items-center px-3 py-2 border-b last:border-0">
+      <div class="col-span-1 text-sm font-bold text-indigo-600">{{ entry.order }}</div>
+      <div class="col-span-5">
+        <select v-model="entry.memberId" @change="onMemberSelect(entry)"
+                class="w-full border rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
+          <option value="">-</option>
+          <option v-for="m in playerMembers" :key="m.id" :value="m.id">{{ memberShortName(m) }}({{ m.grade }}年)</option>
+        </select>
+      </div>
+      <div class="col-span-4">
+        <select v-model="entry.position"
+                class="w-full border rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
+          <option value="">-</option>
+          <option v-for="p in POSITIONS" :key="p.code" :value="p.code">{{ p.label }}</option>
+        </select>
+      </div>
+      <div v-if="useDP" class="col-span-2 flex justify-center">
+        <input type="radio" name="dp" :checked="entry.isDP" @change="setDP(entry.order)" class="accent-indigo-600 w-4 h-4">
+      </div>
+    </div>
+
+    <!-- FP -->
+    <div v-if="useDP" class="bg-amber-50 border-t border-amber-200 px-3 py-3">
+      <p class="text-xs font-bold text-amber-700 mb-2">FP（フレックスプレイヤー）</p>
+      <div class="grid grid-cols-2 gap-2">
+        <select v-model="fpMemberId" class="border border-amber-300 rounded-lg px-2 py-1.5 text-xs bg-white">
+          <option value="">選択</option>
+          <option v-for="m in playerMembers" :key="m.id" :value="m.id">{{ memberShortName(m) }}</option>
+        </select>
+        <select v-model="fpPosition" class="border border-amber-300 rounded-lg px-2 py-1.5 text-xs bg-white">
+          <option value="">守備位置</option>
+          <option v-for="p in POSITIONS" :key="p.code" :value="p.code">{{ p.label }}</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- 保存ボタン -->
+  <button @click="saveDraft" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 mb-4">
+    ラインナップを保存
+  </button>
+
+  <!-- テキスト出力 -->
+  <div class="bg-white rounded-2xl shadow p-4">
+    <p class="text-xs font-semibold text-gray-500 mb-2">LINEやメモにコピー</p>
+    <pre class="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{{ copyText }}</pre>
+    <button @click="copyToClipboard" class="mt-3 w-full border border-indigo-300 text-indigo-600 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-50">
+      📋 クリップボードにコピー
+    </button>
+  </div>
+
+  <!-- ポジション選択パネル -->
+  <div v-if="selectedPos" class="fixed inset-x-4 bottom-20 bg-white rounded-2xl shadow-2xl border p-4 z-50">
+    <p class="text-sm font-bold mb-3 text-gray-700">
+      「{{ (FIELD_POS_LIST.find(p=>p.code===selectedPos)||{}).label }}」の選手を選択
+    </p>
+    <div class="grid grid-cols-3 gap-2 max-h-44 overflow-y-auto">
+      <button v-for="m in playerMembers" :key="m.id"
+              @click="simAssign(selectedPos, m.id)"
+              class="px-2 py-2 rounded-lg border text-sm hover:bg-indigo-50 text-left truncate"
+              :class="lineup.some(l=>l.memberId===m.id&&l.position===selectedPos)?'border-indigo-500 bg-indigo-50 font-semibold':''">
+        {{ memberShortName(m) }}
+      </button>
+    </div>
+    <div class="flex gap-2 mt-3">
+      <button @click="simAssign(selectedPos,'')" class="flex-1 py-2 border rounded-lg text-sm text-red-400 hover:bg-red-50">削除</button>
+      <button @click="selectedPos=null" class="flex-1 py-2 border rounded-lg text-sm text-gray-500 hover:bg-gray-50">キャンセル</button>
+    </div>
+  </div>
+</div>
+  `
+};
+
 // ── ルーター ────────────────────────────────────
 const App = {
-  components: { Dashboard, Members, Schedule, EventDetail, Stats },
+  components: { Dashboard, Members, Schedule, EventDetail, Stats, LineupSim },
   setup() {
     const hash = ref(location.hash.replace('#', '') || '/');
     window.addEventListener('hashchange', () => {
@@ -1322,6 +1552,7 @@ const App = {
       if (h.startsWith('/schedule')) return Schedule;
       if (h.startsWith('/events/'))  return EventDetail;
       if (h === '/stats')            return Stats;
+      if (h === '/sim')              return LineupSim;
       return Dashboard;
     });
 
@@ -1334,6 +1565,7 @@ const App = {
       { href: '#/', label: 'ホーム', icon: '🏠' },
       { href: '#/members', label: 'メンバー', icon: '👥' },
       { href: '#/schedule', label: '日程', icon: '📅' },
+      { href: '#/sim', label: 'ラインナップ', icon: '🎯' },
       { href: '#/stats', label: '成績', icon: '📊' },
     ];
 
