@@ -304,14 +304,14 @@ const Members = {
       </div>
       <div class="flex-1 min-w-0">
         <p class="font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
-          {{ m.name }}
+          {{ memberShortName(m) }}
           <span v-if="m.captain" class="text-xs px-2 py-0.5 rounded-full font-bold bg-yellow-400 text-yellow-900">👑 キャプテン</span>
           <span v-if="m.viceCaptain" class="text-xs px-2 py-0.5 rounded-full font-bold bg-yellow-200 text-yellow-800">👑 副キャプテン</span>
           <span :class="typeBadgeClass(m.type)" class="text-xs px-2 py-0.5 rounded-full font-medium">{{ memberTypeLabel(m.type||'player') }}</span>
           <span v-if="m.type==='player'||!m.type" class="text-xs text-gray-500">{{ m.grade }}年生</span>
           <span v-if="m.number" class="text-xs text-gray-400">#{{ m.number }}</span>
         </p>
-        <p v-if="m.shortName && m.shortName !== m.name" class="text-xs text-indigo-500 mt-0.5">登録名: {{ m.shortName }}</p>
+        <p v-if="m.shortName && m.shortName !== m.name" class="text-xs text-gray-400 mt-0.5">{{ m.name }}</p>
         <p v-if="m.type==='player'||!m.type" class="text-xs text-gray-500 mt-1">{{ (m.positions||[]).map(p=>posLabel(p)).join(' / ') || '守備位置未設定' }}</p>
         <p v-if="m.joinDate" class="text-xs text-gray-400 mt-0.5">入部: {{ m.joinDate }}</p>
         <p v-if="m.notes" class="text-xs text-gray-400 mt-0.5">{{ m.notes }}</p>
