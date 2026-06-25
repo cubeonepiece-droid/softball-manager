@@ -667,8 +667,12 @@ const EventDetail = {
       tab.value = isGameType(e.type) ? 'score' : 'attendance';
     }
 
-    onMounted(initFromEvent);
-    watch(() => props.eventId, initFromEvent);
+    // Firestoreからデータが届いたときも初期化できるようwatchを使用
+    let _initialized = false;
+    watch(ev, (newEv) => {
+      if (newEv && !_initialized) { _initialized = true; initFromEvent(); }
+    }, { immediate: true });
+    watch(() => props.eventId, () => { _initialized = false; initFromEvent(); });
 
     const totalUs   = computed(() => totalScore(scoreUs.value));
     const totalThem = computed(() => totalScore(scoreThem.value));
@@ -1372,7 +1376,7 @@ const Stats = {
   <!-- データ管理 -->
   <div class="bg-white rounded-2xl shadow p-5">
     <h2 class="text-sm font-semibold text-gray-500 mb-3">データ管理</h2>
-    <div class="flex gap-3">
+    <div class="flex gap-3 mb-3">
       <button @click="store.exportData()" class="flex-1 border border-indigo-300 text-indigo-700 py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-50">
         📤 エクスポート
       </button>
@@ -1381,7 +1385,11 @@ const Stats = {
         <input type="file" accept=".json" class="hidden" @change="importFile">
       </label>
     </div>
-    <p class="text-xs text-gray-400 mt-2 text-center">JSONファイルでチーム内共有できます</p>
+    <!-- ローカルデータ移行ボタン（旧バージョンからの引き継ぎ用） -->
+    <button @click="migrateFromLocal" class="w-full bg-amber-500 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-amber-600">
+      🔄 このPCのデータをクラウドに移行
+    </button>
+    <p class="text-xs text-gray-400 mt-2 text-center">旧バージョンのデータをFirestoreに一括移行します</p>
   </div>
 </div>
   `,
@@ -1395,6 +1403,15 @@ const Stats = {
         alert(ok ? 'インポートしました！' : 'ファイルの形式が正しくありません');
       };
       reader.readAsText(file);
+    },
+    migrateFromLocal() {
+      const LOCAL_KEY = 'softball_v1';
+      const raw = localStorage.getItem(LOCAL_KEY);
+      if (!raw) return alert('このPCにローカルデータが見つかりませんでした。');
+      if (!confirm('このPCのデータをクラウドに移行しますか？\n（既存のクラウドデータとマージされます）')) return;
+      const ok = store.importData(raw);
+      if (ok) alert('移行完了！\nスマホや他のPCでも同じデータが見られます。');
+      else alert('移行に失敗しました。');
     }
   }
 };

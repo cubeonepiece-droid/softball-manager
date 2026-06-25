@@ -1,6 +1,16 @@
-// store.js - データ管理 (localStorage永続化)
+// store.js - Firebase Firestore版
 
-const STORAGE_KEY = 'softball_v1';
+const firebaseConfig = {
+  apiKey: "AIzaSyDqN23f2bMRgrfV6erFttuc-jR7ABRxNhw",
+  authDomain: "softball-manager-daito.firebaseapp.com",
+  projectId: "softball-manager-daito",
+  storageBucket: "softball-manager-daito.firebasestorage.app",
+  messagingSenderId: "247998186306",
+  appId: "1:247998186306:web:557bfc9e8d01f991c3bedb",
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
 
 function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -10,80 +20,63 @@ window.store = Vue.reactive({
   teamName: 'チーム名',
   members: [],
   events: [],
+  _ready: false,
 
   init() {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const d = JSON.parse(saved);
-        this.teamName = d.teamName || 'チーム名';
-        this.members  = d.members  || [];
-        this.events   = d.events   || [];
-      }
-    } catch (e) {
-      console.error('load error', e);
-    }
+    // チーム設定
+    db.collection('config').doc('settings').get().then(doc => {
+      if (doc.exists) this.teamName = doc.data().teamName || 'チーム名';
+    });
+
+    // メンバーをリアルタイム同期
+    db.collection('members').onSnapshot(snap => {
+      this.members = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+      this._ready = true;
+    }, err => console.error('members sync error', err));
+
+    // イベントをリアルタイム同期
+    db.collection('events').onSnapshot(snap => {
+      this.events = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+    }, err => console.error('events sync error', err));
   },
 
   save() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      teamName: this.teamName,
-      members:  this.members,
-      events:   this.events,
-    }));
+    db.collection('config').doc('settings').set({ teamName: this.teamName });
   },
 
   // ── メンバー ──────────────────────────────────
   addMember(m) {
-    this.members.push({ ...m, id: generateId() });
-    this.save();
+    const id = generateId();
+    db.collection('members').doc(id).set({ ...m, id });
+    return id;
   },
   updateMember(id, data) {
-    const i = this.members.findIndex(m => m.id === id);
-    if (i !== -1) this.members[i] = { ...this.members[i], ...data };
-    this.save();
+    db.collection('members').doc(id).update(data);
   },
   deleteMember(id) {
-    this.members = this.members.filter(m => m.id !== id);
-    this.save();
+    db.collection('members').doc(id).delete();
   },
   getMember(id) { return this.members.find(m => m.id === id); },
 
   // ── イベント（試合・練習） ───────────────────
   addEvent(e) {
-    const ev = {
-      id: generateId(),
-      type: 'game',
-      date: '',
-      time: '',
-      opponent: '',
-      location: '',
-      homeAway: 'home',
-      innings: 7,
-      score: { us: Array(7).fill(0), them: Array(7).fill(0) },
-      lineup: [],      // [{ order, memberId, position, isDP }]
-      fpMemberId: '',  // FP選手ID
-      fpPosition: '',  // FP守備位置
-      useDP: false,
-      attendance: [],  // [{ memberId, status: 'attending'|'absent'|'unknown' }]
-      atBats: [],      // [{ memberId, inning, result }]
-      pitcherLog: [],  // [{ memberId, fromInning, toInning }]
-      result: null,    // 'win'|'lose'|'draw'|null
-      notes: '',
-      ...e,
+    const id = generateId();
+    const defaults = {
+      type: 'practice', date: '', time: '', opponent: '', location: '',
+      homeAway: 'home', innings: 3,
+      score: { us: Array(9).fill(0), them: Array(9).fill(0) },
+      lineup: [], fpMemberId: '', fpPosition: '', useDP: false,
+      attendance: [], atBats: [], pitcherLog: [],
+      result: null, notes: '', timeOfDay: '',
     };
-    this.events.push(ev);
-    this.save();
-    return ev.id;
+    db.collection('events').doc(id).set({ ...defaults, ...e, id });
+    return id;
   },
   updateEvent(id, data) {
-    const i = this.events.findIndex(e => e.id === id);
-    if (i !== -1) this.events[i] = { ...this.events[i], ...data };
-    this.save();
+    db.collection('events').doc(id).update(data);
   },
   deleteEvent(id) {
-    this.events = this.events.filter(e => e.id !== id);
-    this.save();
+    db.collection('events').doc(id).delete();
   },
   getEvent(id) { return this.events.find(e => e.id === id); },
 
@@ -99,26 +92,31 @@ window.store = Vue.reactive({
     };
   },
 
-  // ── エクスポート ─────────────────────────────
+  // ── エクスポート・インポート ──────────────────
   exportData() {
     const json = JSON.stringify({ teamName: this.teamName, members: this.members, events: this.events }, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `softball_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
+    a.href = url; a.download = `softball_${new Date().toISOString().slice(0,10)}.json`; a.click();
     URL.revokeObjectURL(url);
   },
   importData(jsonStr) {
     try {
       const d = JSON.parse(jsonStr);
-      if (d.members) this.members = d.members;
-      if (d.events)  this.events  = d.events;
-      if (d.teamName) this.teamName = d.teamName;
-      this.save();
+      if (d.teamName) {
+        this.teamName = d.teamName;
+        db.collection('config').doc('settings').set({ teamName: d.teamName });
+      }
+      if (d.members) {
+        d.members.forEach(m => db.collection('members').doc(m.id).set(m));
+      }
+      if (d.events) {
+        d.events.forEach(e => db.collection('events').doc(e.id).set(e));
+      }
       return true;
-    } catch (e) {
+    } catch(e) {
+      console.error('import error', e);
       return false;
     }
   },
