@@ -1401,25 +1401,34 @@ const EventDetail = {
 // ── 成績統計 ────────────────────────────────────
 const Stats = {
   setup() {
-    const rec = computed(() => store.record);
-    const games = computed(() => sortedEvents(store.gameEvents).reverse());
+    const filterType = ref('all'); // 'all' | 'game' | 'scrimmage'
 
-    const winPct = computed(() => {
-      if (!rec.value.total) return '-';
-      return ((rec.value.wins / rec.value.total) * 100).toFixed(1) + '%';
-    });
+    function calcRecord(evs) {
+      const played = evs.filter(e => e.result);
+      const wins   = played.filter(e => e.result === 'win').length;
+      const losses = played.filter(e => e.result === 'lose').length;
+      const draws  = played.filter(e => e.result === 'draw').length;
+      const total  = played.length;
+      const winPct = total ? (wins / total * 100).toFixed(1) + '%' : '-';
+      const avgUs  = total ? (played.reduce((s,e)=>s+totalScore(e.score?.us),0)/total).toFixed(1) : '-';
+      const avgThem= total ? (played.reduce((s,e)=>s+totalScore(e.score?.them),0)/total).toFixed(1) : '-';
+      return { wins, losses, draws, total, winPct, avgUs, avgThem };
+    }
 
-    const avgScoreUs = computed(() => {
-      const gs = store.gameEvents.filter(e => e.result);
-      if (!gs.length) return '-';
-      const avg = gs.reduce((s, e) => s + totalScore(e.score?.us), 0) / gs.length;
-      return avg.toFixed(1);
-    });
-    const avgScoreThem = computed(() => {
-      const gs = store.gameEvents.filter(e => e.result);
-      if (!gs.length) return '-';
-      const avg = gs.reduce((s, e) => s + totalScore(e.score?.them), 0) / gs.length;
-      return avg.toFixed(1);
+    const tournamentEvents = computed(() => store.events.filter(e => e.type==='game'||e.type==='tournament'));
+    const scrimmageEvents  = computed(() => store.events.filter(e => e.type==='scrimmage'));
+    const allGameEvents    = computed(() => store.gameEvents);
+
+    const tRec = computed(() => calcRecord(tournamentEvents.value));
+    const sRec = computed(() => calcRecord(scrimmageEvents.value));
+    const aRec = computed(() => calcRecord(allGameEvents.value));
+
+    const filteredGames = computed(() => {
+      let evs;
+      if (filterType.value === 'game')      evs = tournamentEvents.value;
+      else if (filterType.value === 'scrimmage') evs = scrimmageEvents.value;
+      else evs = allGameEvents.value;
+      return sortedEvents(evs).reverse();
     });
 
     // スコア入力モーダル
@@ -1445,61 +1454,100 @@ const Stats = {
     }
     function inningArr(ev) { return Array.from({ length: ev.innings || 7 }, (_, i) => i); }
 
-    return { rec, games, winPct, avgScoreUs, avgScoreThem, store, totalScore, navigate, scoreModal, modalUs, modalThem, openScoreModal, saveModalScore, inningArr };
+    return { filterType, tRec, sRec, aRec, filteredGames, store, totalScore, navigate, scoreModal, modalUs, modalThem, openScoreModal, saveModalScore, inningArr, eventTypeLabel };
   },
   template: `
 <div class="max-w-2xl mx-auto px-4 py-6 space-y-5">
   <h1 class="text-xl font-bold text-gray-800">📊 成績統計</h1>
 
-  <!-- 戦績カード -->
-  <div class="bg-white rounded-2xl shadow p-5">
-    <h2 class="text-sm font-semibold text-gray-500 mb-4">チーム戦績</h2>
-    <div class="flex gap-4 justify-around text-center mb-4">
-      <div><p class="text-4xl font-bold text-green-600">{{ rec.wins }}</p><p class="text-xs text-gray-500 mt-1">勝</p></div>
-      <div><p class="text-4xl font-bold text-red-500">{{ rec.losses }}</p><p class="text-xs text-gray-500 mt-1">敗</p></div>
-      <div><p class="text-4xl font-bold text-gray-400">{{ rec.draws }}</p><p class="text-xs text-gray-500 mt-1">分</p></div>
+  <!-- 大会戦績 -->
+  <div class="bg-white rounded-2xl shadow p-4">
+    <h2 class="text-sm font-semibold text-indigo-600 mb-3">🏆 大会</h2>
+    <div class="flex gap-4 justify-around text-center mb-3">
+      <div><p class="text-3xl font-bold text-green-600">{{ tRec.wins }}</p><p class="text-xs text-gray-500 mt-0.5">勝</p></div>
+      <div><p class="text-3xl font-bold text-red-500">{{ tRec.losses }}</p><p class="text-xs text-gray-500 mt-0.5">敗</p></div>
+      <div><p class="text-3xl font-bold text-gray-400">{{ tRec.draws }}</p><p class="text-xs text-gray-500 mt-0.5">分</p></div>
     </div>
-    <div class="grid grid-cols-3 gap-3 text-center border-t pt-4">
-      <div><p class="text-xl font-bold text-indigo-600">{{ rec.total }}</p><p class="text-xs text-gray-500">試合数</p></div>
-      <div><p class="text-xl font-bold text-indigo-600">{{ winPct }}</p><p class="text-xs text-gray-500">勝率</p></div>
-      <div><p class="text-xl font-bold text-indigo-600">{{ store.members.filter(m=>!m.type||m.type==='player').length }}</p><p class="text-xs text-gray-500">選手数</p></div>
-    </div>
-  </div>
-
-  <!-- 得点統計 -->
-  <div class="bg-white rounded-2xl shadow p-5">
-    <h2 class="text-sm font-semibold text-gray-500 mb-4">得点統計（試合平均）</h2>
-    <div class="grid grid-cols-2 gap-4 text-center">
-      <div class="bg-indigo-50 rounded-xl p-3">
-        <p class="text-3xl font-bold text-indigo-700">{{ avgScoreUs }}</p>
-        <p class="text-xs text-gray-500 mt-1">平均得点</p>
-      </div>
-      <div class="bg-red-50 rounded-xl p-3">
-        <p class="text-3xl font-bold text-red-500">{{ avgScoreThem }}</p>
-        <p class="text-xs text-gray-500 mt-1">平均失点</p>
-      </div>
+    <div class="grid grid-cols-4 gap-2 text-center border-t pt-3">
+      <div><p class="text-base font-bold text-indigo-600">{{ tRec.total }}</p><p class="text-xs text-gray-400">試合</p></div>
+      <div><p class="text-base font-bold text-indigo-600">{{ tRec.winPct }}</p><p class="text-xs text-gray-400">勝率</p></div>
+      <div><p class="text-base font-bold text-blue-600">{{ tRec.avgUs }}</p><p class="text-xs text-gray-400">平均得点</p></div>
+      <div><p class="text-base font-bold text-red-400">{{ tRec.avgThem }}</p><p class="text-xs text-gray-400">平均失点</p></div>
     </div>
   </div>
 
-  <!-- 試合結果一覧 -->
-  <div class="bg-white rounded-2xl shadow p-5">
-    <h2 class="text-sm font-semibold text-gray-500 mb-3">試合一覧</h2>
-    <div v-if="!games.length" class="text-center py-6 text-gray-400 text-sm">試合がありません</div>
-    <div v-for="ev in games" :key="ev.id"
-         class="py-2.5 border-b last:border-0">
-      <div class="flex items-center gap-3">
+  <!-- 練習試合戦績 -->
+  <div class="bg-white rounded-2xl shadow p-4">
+    <h2 class="text-sm font-semibold text-blue-600 mb-3">⚾ 練習試合</h2>
+    <div class="flex gap-4 justify-around text-center mb-3">
+      <div><p class="text-3xl font-bold text-green-600">{{ sRec.wins }}</p><p class="text-xs text-gray-500 mt-0.5">勝</p></div>
+      <div><p class="text-3xl font-bold text-red-500">{{ sRec.losses }}</p><p class="text-xs text-gray-500 mt-0.5">敗</p></div>
+      <div><p class="text-3xl font-bold text-gray-400">{{ sRec.draws }}</p><p class="text-xs text-gray-500 mt-0.5">分</p></div>
+    </div>
+    <div class="grid grid-cols-4 gap-2 text-center border-t pt-3">
+      <div><p class="text-base font-bold text-indigo-600">{{ sRec.total }}</p><p class="text-xs text-gray-400">試合</p></div>
+      <div><p class="text-base font-bold text-indigo-600">{{ sRec.winPct }}</p><p class="text-xs text-gray-400">勝率</p></div>
+      <div><p class="text-base font-bold text-blue-600">{{ sRec.avgUs }}</p><p class="text-xs text-gray-400">平均得点</p></div>
+      <div><p class="text-base font-bold text-red-400">{{ sRec.avgThem }}</p><p class="text-xs text-gray-400">平均失点</p></div>
+    </div>
+  </div>
+
+  <!-- 累計 -->
+  <div class="bg-indigo-50 rounded-2xl shadow p-4 border border-indigo-100">
+    <h2 class="text-sm font-semibold text-indigo-700 mb-3">📈 累計（大会＋練習試合）</h2>
+    <div class="flex gap-4 justify-around text-center mb-3">
+      <div><p class="text-3xl font-bold text-green-600">{{ aRec.wins }}</p><p class="text-xs text-gray-500 mt-0.5">勝</p></div>
+      <div><p class="text-3xl font-bold text-red-500">{{ aRec.losses }}</p><p class="text-xs text-gray-500 mt-0.5">敗</p></div>
+      <div><p class="text-3xl font-bold text-gray-400">{{ aRec.draws }}</p><p class="text-xs text-gray-500 mt-0.5">分</p></div>
+    </div>
+    <div class="grid grid-cols-4 gap-2 text-center border-t border-indigo-200 pt-3">
+      <div><p class="text-base font-bold text-indigo-700">{{ aRec.total }}</p><p class="text-xs text-gray-400">試合</p></div>
+      <div><p class="text-base font-bold text-indigo-700">{{ aRec.winPct }}</p><p class="text-xs text-gray-400">勝率</p></div>
+      <div><p class="text-base font-bold text-blue-600">{{ aRec.avgUs }}</p><p class="text-xs text-gray-400">平均得点</p></div>
+      <div><p class="text-base font-bold text-red-400">{{ aRec.avgThem }}</p><p class="text-xs text-gray-400">平均失点</p></div>
+    </div>
+    <div class="mt-3 text-center">
+      <p class="text-xs text-indigo-500">選手数：{{ store.members.filter(m=>!m.type||m.type==='player').length }}名</p>
+    </div>
+  </div>
+
+  <!-- 試合一覧 -->
+  <div class="bg-white rounded-2xl shadow p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-sm font-semibold text-gray-500">試合一覧</h2>
+      <div class="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+        <button @click="filterType='all'"
+                :class="filterType==='all'?'bg-white shadow text-indigo-700':'text-gray-500'"
+                class="px-2.5 py-1 rounded-md text-xs font-semibold">全て</button>
+        <button @click="filterType='game'"
+                :class="filterType==='game'?'bg-white shadow text-indigo-700':'text-gray-500'"
+                class="px-2.5 py-1 rounded-md text-xs font-semibold">大会</button>
+        <button @click="filterType='scrimmage'"
+                :class="filterType==='scrimmage'?'bg-white shadow text-indigo-700':'text-gray-500'"
+                class="px-2.5 py-1 rounded-md text-xs font-semibold">練習試合</button>
+      </div>
+    </div>
+    <div v-if="!filteredGames.length" class="text-center py-6 text-gray-400 text-sm">試合がありません</div>
+    <div v-for="ev in filteredGames" :key="ev.id" class="py-2.5 border-b last:border-0">
+      <div class="flex items-center gap-2">
         <span :class="ev.result==='win'?'bg-green-100 text-green-700':ev.result==='lose'?'bg-red-100 text-red-600':ev.result==='draw'?'bg-gray-100 text-gray-600':'bg-blue-50 text-blue-400'"
               class="text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 w-8 text-center">
           {{ ev.result==='win'?'勝':ev.result==='lose'?'敗':ev.result==='draw'?'分':'未' }}
         </span>
-        <div class="flex-1 cursor-pointer" @click="navigate('#/events/'+ev.id)">
-          <p class="text-sm font-medium text-gray-800">{{ ev.date }} vs {{ ev.opponent||'未定' }}</p>
-          <p class="text-xs text-gray-400">{{ ev.homeAway==='home'?'ホーム':'アウェイ' }}{{ ev.location?' / '+ev.location:'' }}</p>
+        <span :class="ev.type==='game'||ev.type==='tournament'?'bg-indigo-100 text-indigo-700':'bg-blue-100 text-blue-700'"
+              class="text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0">
+          {{ ev.type==='game'||ev.type==='tournament'?'大会':'練習試合' }}
+        </span>
+        <div class="flex-1 cursor-pointer min-w-0" @click="navigate('#/events/'+ev.id)">
+          <p class="text-sm font-medium text-gray-800 truncate">
+            {{ ev.tournamentName ? ev.tournamentName + ' ' : '' }}vs {{ ev.opponent||'未定' }}
+          </p>
+          <p class="text-xs text-gray-400">{{ ev.date }}</p>
         </div>
-        <span v-if="ev.result" class="font-mono text-sm font-bold mr-2">{{ totalScore(ev.score?.us) }}-{{ totalScore(ev.score?.them) }}</span>
+        <span v-if="ev.result" class="font-mono text-sm font-bold flex-shrink-0">{{ totalScore(ev.score?.us) }}-{{ totalScore(ev.score?.them) }}</span>
         <button @click="openScoreModal(ev)"
                 class="text-xs border border-indigo-300 text-indigo-600 px-2 py-1 rounded-lg hover:bg-indigo-50 flex-shrink-0">
-          スコア入力
+          スコア
         </button>
       </div>
     </div>
