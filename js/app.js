@@ -1415,7 +1415,8 @@ const EventDetail = {
 // ── 成績統計 ────────────────────────────────────
 const Stats = {
   setup() {
-    const filterType = ref('all'); // 'all' | 'game' | 'scrimmage'
+    const filterType  = ref('all'); // 'all' | 'game' | 'scrimmage'
+    const selectedYear = ref('all');
 
     function calcRecord(evs) {
       const played = evs.filter(e => e.result);
@@ -1429,9 +1430,19 @@ const Stats = {
       return { wins, losses, draws, total, winPct, avgUs, avgThem };
     }
 
-    const tournamentEvents = computed(() => store.events.filter(e => e.type==='game'||e.type==='tournament'));
-    const scrimmageEvents  = computed(() => store.events.filter(e => e.type==='scrimmage'));
-    const allGameEvents    = computed(() => store.gameEvents);
+    const availableYears = computed(() => {
+      const years = new Set(store.gameEvents.map(e => e.date?.slice(0, 4)).filter(Boolean));
+      return [...years].sort().reverse();
+    });
+
+    function byYear(evs) {
+      if (selectedYear.value === 'all') return evs;
+      return evs.filter(e => e.date?.startsWith(selectedYear.value));
+    }
+
+    const tournamentEvents = computed(() => byYear(store.events.filter(e => e.type==='game'||e.type==='tournament')));
+    const scrimmageEvents  = computed(() => byYear(store.events.filter(e => e.type==='scrimmage')));
+    const allGameEvents    = computed(() => byYear(store.gameEvents));
 
     const tRec = computed(() => calcRecord(tournamentEvents.value));
     const sRec = computed(() => calcRecord(scrimmageEvents.value));
@@ -1468,11 +1479,17 @@ const Stats = {
     }
     function inningArr(ev) { return Array.from({ length: ev.innings || 7 }, (_, i) => i); }
 
-    return { filterType, tRec, sRec, aRec, filteredGames, store, totalScore, navigate, scoreModal, modalUs, modalThem, openScoreModal, saveModalScore, inningArr, eventTypeLabel };
+    return { filterType, selectedYear, availableYears, tRec, sRec, aRec, filteredGames, store, totalScore, navigate, scoreModal, modalUs, modalThem, openScoreModal, saveModalScore, inningArr, eventTypeLabel };
   },
   template: `
 <div class="max-w-2xl mx-auto px-4 py-6 space-y-5">
-  <h1 class="text-xl font-bold text-gray-800">📊 成績統計</h1>
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-bold text-gray-800">📊 成績統計</h1>
+    <select v-model="selectedYear" class="border rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <option value="all">全期間</option>
+      <option v-for="y in availableYears" :key="y" :value="y">{{ y }}年度</option>
+    </select>
+  </div>
 
   <!-- 大会戦績 -->
   <div class="bg-white rounded-2xl shadow p-4">
