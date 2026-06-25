@@ -34,7 +34,7 @@ const EVENT_TYPES = [
 const GAME_TYPES     = ['game', 'tournament', 'scrimmage']; // tournament kept for legacy data
 const PRACTICE_TYPES = ['practice', 'joint'];
 const SOCIAL_TYPES   = ['social'];
-const MAP_TYPES      = ['game', 'tournament', 'scrimmage', 'joint']; // types that show Google Maps
+const MAP_TYPES      = ['game', 'tournament', 'scrimmage', 'joint', 'social']; // types that show Google Maps
 const TOD_TYPES      = ['game', 'tournament', 'scrimmage', 'joint', 'practice']; // types with time-of-day tag
 function isGameType(type)   { return GAME_TYPES.includes(type); }
 function isSocialType(type) { return SOCIAL_TYPES.includes(type); }
@@ -429,7 +429,7 @@ const Schedule = {
     const modal = ref(false);
     const editing = ref(null);
     const form = reactive({
-      type: 'practice', date: '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 3, timeOfDay: '', transport: '', notes: ''
+      type: 'practice', date: '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 3, timeOfDay: '', transport: '', rainCancelled: false, notes: ''
     });
 
     function prevMonth() {
@@ -472,19 +472,19 @@ const Schedule = {
     }
     function openAdd(d) {
       editing.value = null;
-      Object.assign(form, { type: 'practice', date: d ? dateStr(d) : '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 3, timeOfDay: '', transport: '', notes: '' });
+      Object.assign(form, { type: 'practice', date: d ? dateStr(d) : '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 3, timeOfDay: '', transport: '', rainCancelled: false, notes: '' });
       modal.value = true;
     }
     function openEdit(ev) {
       editing.value = ev.id;
       // legacy tournament → game
       const type = ev.type === 'tournament' ? 'game' : (ev.type||'practice');
-      Object.assign(form, { type, date: ev.date, time: ev.time||'', opponent: ev.opponent||'', location: ev.location||'', homeAway: ev.homeAway||'home', innings: ev.innings||3, timeOfDay: ev.timeOfDay||'', transport: ev.transport||'', notes: ev.notes||'' });
+      Object.assign(form, { type, date: ev.date, time: ev.time||'', opponent: ev.opponent||'', location: ev.location||'', homeAway: ev.homeAway||'home', innings: ev.innings||3, timeOfDay: ev.timeOfDay||'', transport: ev.transport||'', rainCancelled: ev.rainCancelled||false, notes: ev.notes||'' });
       modal.value = true;
     }
     function save() {
       if (!form.date) return alert('日付を選択してください');
-      const data = { type: form.type, date: form.date, time: form.time, opponent: form.opponent, location: form.location, homeAway: form.homeAway, innings: Number(form.innings), timeOfDay: form.timeOfDay, transport: form.type !== 'practice' ? form.transport : '', notes: form.notes };
+      const data = { type: form.type, date: form.date, time: form.time, opponent: form.opponent, location: form.location, homeAway: form.homeAway, innings: Number(form.innings), timeOfDay: form.timeOfDay, transport: form.type !== 'practice' ? form.transport : '', rainCancelled: form.rainCancelled, notes: form.notes };
       if (editing.value) { store.updateEvent(editing.value, data); modal.value = false; }
       else {
         const id = store.addEvent(data);
@@ -554,6 +554,7 @@ const Schedule = {
           <span v-if="ev.transport==='bicycle'" class="text-xs bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full font-medium">🚲 自転車</span>
           <span v-if="ev.transport==='car'" class="text-xs bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full font-medium">🚗 車</span>
           <span v-if="ev.transport==='train'" class="text-xs bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full font-medium">🚃 電車</span>
+          <span v-if="ev.rainCancelled" class="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">🌧 雨天中止</span>
         </div>
         <p class="text-xs text-gray-500 truncate">{{ isGameType(ev.type)?(ev.opponent||'相手未定')+(ev.location?' @ '+ev.location:'') : isSocialType(ev.type)?(ev.opponent||'イベント')+(ev.location?' @ '+ev.location:'') : (ev.location||'場所未定') }}</p>
         <a v-if="hasMapLink(ev.type) && ev.location" :href="googleMapsUrl(ev.location)" target="_blank" @click.stop
@@ -638,6 +639,13 @@ const Schedule = {
                     :class="form.timeOfDay===opt.value?'bg-amber-500 text-white':'bg-gray-100 text-gray-700'"
                     class="px-4 py-1.5 rounded-lg text-sm font-medium">{{ opt.label }}</button>
           </div>
+        </div>
+        <!-- 雨天中止 -->
+        <div>
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" v-model="form.rainCancelled" class="accent-blue-500 w-4 h-4">
+            <span class="text-sm font-medium text-gray-700">🌧 雨天中止</span>
+          </label>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">メモ</label>
@@ -888,7 +896,10 @@ const EventDetail = {
       <div><span class="text-gray-500">日付：</span><span class="font-medium">{{ ev.date }}</span></div>
       <div><span class="text-gray-500">時間：</span><span class="font-medium">{{ ev.time }}</span></div>
       <div v-if="isGameType(ev.type)"><span class="text-gray-500">相手：</span><span class="font-medium">{{ ev.opponent||'未定' }}</span></div>
-      <div v-if="isGameType(ev.type)"><span class="text-gray-500">H/A：</span><span class="font-medium">{{ ev.homeAway==='home'?'ホーム':'アウェイ' }}</span></div>
+      <div v-if="isGameType(ev.type)" class="flex items-center gap-2">
+        <span class="text-gray-500">先後：</span><span class="font-medium">{{ ev.homeAway==='home'?'先攻':'後攻' }}</span>
+        <button @click="store.updateEvent(ev.id,{homeAway:ev.homeAway==='home'?'away':'home'})" class="text-xs border border-gray-300 rounded px-1.5 py-0.5 text-gray-500 hover:bg-gray-100">切替</button>
+      </div>
       <div v-if="isSocialType(ev.type)"><span class="text-gray-500">イベント名：</span><span class="font-medium">{{ ev.opponent||'未定' }}</span></div>
       <div v-if="ev.timeOfDay" class="col-span-2">
         <span class="text-gray-500">時間帯：</span>
@@ -897,6 +908,9 @@ const EventDetail = {
       <div v-if="ev.transport" class="col-span-2">
         <span class="text-gray-500">交通手段：</span>
         <span class="inline-block bg-sky-100 text-sky-700 text-xs px-2 py-0.5 rounded-full font-medium ml-1">{{ ev.transport==='bicycle'?'🚲 自転車':ev.transport==='train'?'🚃 電車':'🚗 車' }}</span>
+      </div>
+      <div v-if="ev.rainCancelled" class="col-span-2">
+        <span class="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-semibold">🌧 雨天中止</span>
       </div>
       <div class="col-span-2">
         <span class="text-gray-500">場所：</span><span class="font-medium">{{ ev.location||'未定' }}</span>
@@ -1353,7 +1367,7 @@ const Stats = {
     <div class="grid grid-cols-3 gap-3 text-center border-t pt-4">
       <div><p class="text-xl font-bold text-indigo-600">{{ rec.total }}</p><p class="text-xs text-gray-500">試合数</p></div>
       <div><p class="text-xl font-bold text-indigo-600">{{ winPct }}</p><p class="text-xs text-gray-500">勝率</p></div>
-      <div><p class="text-xl font-bold text-indigo-600">{{ store.members.length }}</p><p class="text-xs text-gray-500">メンバー</p></div>
+      <div><p class="text-xl font-bold text-indigo-600">{{ store.members.filter(m=>!m.type||m.type==='player').length }}</p><p class="text-xs text-gray-500">選手数</p></div>
     </div>
   </div>
 
@@ -1482,7 +1496,8 @@ const Stats = {
 };
 
 // ── ラインナップシミュレーター ──────────────────
-const SIM_DRAFT_KEY = 'softball_sim_draft';
+const SIM_PATTERNS_KEY = 'softball_sim_patterns';
+const SIM_DRAFT_KEY    = 'softball_sim_draft'; // legacy
 const LineupSim = {
   setup() {
     const playerMembers = computed(() => [...store.members]
@@ -1506,6 +1521,93 @@ const LineupSim = {
     const fpPosition = ref('');
     const selectedPos = ref(null);
 
+    // ── 複数パターン ──────────────────────────────
+    const patterns       = ref([]);
+    const activePatternIdx = ref(0);
+
+    function emptyLineup() { return Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false })); }
+    function makePattern(name) { return { id: Date.now().toString() + Math.random(), name, useDP: false, lineup: emptyLineup(), fpMemberId: '', fpPosition: '' }; }
+
+    function applyPattern(p) {
+      useDP.value      = p.useDP || false;
+      lineup.value     = JSON.parse(JSON.stringify(p.lineup || emptyLineup()));
+      fpMemberId.value = p.fpMemberId || '';
+      fpPosition.value = p.fpPosition || '';
+    }
+    function syncActivePattern() {
+      if (!patterns.value[activePatternIdx.value]) return;
+      patterns.value[activePatternIdx.value] = {
+        ...patterns.value[activePatternIdx.value],
+        useDP: useDP.value, lineup: JSON.parse(JSON.stringify(lineup.value)),
+        fpMemberId: fpMemberId.value, fpPosition: fpPosition.value,
+      };
+    }
+    function switchPattern(idx) {
+      syncActivePattern();
+      activePatternIdx.value = idx;
+      applyPattern(patterns.value[idx]);
+    }
+    function addPattern() {
+      syncActivePattern();
+      const names = 'ABCDEFGHIJ';
+      const name = 'パターン' + (names[patterns.value.length] || (patterns.value.length + 1));
+      patterns.value.push(makePattern(name));
+      activePatternIdx.value = patterns.value.length - 1;
+      applyPattern(patterns.value[activePatternIdx.value]);
+    }
+    function copyPattern() {
+      syncActivePattern();
+      const src = patterns.value[activePatternIdx.value];
+      const copy = JSON.parse(JSON.stringify({ ...src, id: Date.now().toString(), name: src.name + 'コピー' }));
+      patterns.value.push(copy);
+      activePatternIdx.value = patterns.value.length - 1;
+      applyPattern(patterns.value[activePatternIdx.value]);
+    }
+    function deletePattern() {
+      if (patterns.value.length <= 1) return;
+      if (!confirm(`「${patterns.value[activePatternIdx.value].name}」を削除しますか？`)) return;
+      patterns.value.splice(activePatternIdx.value, 1);
+      activePatternIdx.value = Math.min(activePatternIdx.value, patterns.value.length - 1);
+      applyPattern(patterns.value[activePatternIdx.value]);
+    }
+    function renamePattern() {
+      const p = patterns.value[activePatternIdx.value];
+      const name = prompt('パターン名', p.name);
+      if (name && name.trim()) p.name = name.trim();
+    }
+
+    function loadDraft() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(SIM_PATTERNS_KEY));
+        if (saved && saved.length) {
+          patterns.value = saved;
+          activePatternIdx.value = 0;
+          applyPattern(saved[0]);
+          return;
+        }
+        // legacy
+        const old = JSON.parse(localStorage.getItem(SIM_DRAFT_KEY) || 'null');
+        const p = makePattern('パターンA');
+        if (old) { p.useDP = old.useDP||false; p.lineup = old.lineup||p.lineup; p.fpMemberId = old.fpMemberId||''; p.fpPosition = old.fpPosition||''; }
+        patterns.value = [p];
+        applyPattern(p);
+      } catch(e) { patterns.value = [makePattern('パターンA')]; applyPattern(patterns.value[0]); }
+    }
+    function saveDraft() {
+      syncActivePattern();
+      localStorage.setItem(SIM_PATTERNS_KEY, JSON.stringify(patterns.value));
+      alert('オーダーを保存しました');
+    }
+    function clearDraft() {
+      if (!confirm('このパターンをリセットしますか？')) return;
+      lineup.value = emptyLineup();
+      fpMemberId.value = ''; fpPosition.value = ''; useDP.value = false;
+      syncActivePattern();
+      localStorage.setItem(SIM_PATTERNS_KEY, JSON.stringify(patterns.value));
+    }
+
+    onMounted(loadDraft);
+
     // ドラッグ並び替え
     const dragFrom = ref(null);
     function onDragStart(idx) { dragFrom.value = idx; }
@@ -1518,42 +1620,6 @@ const LineupSim = {
       arr.forEach((l, i) => l.order = i + 1);
       dragFrom.value = null;
     }
-
-    // ベンチ外メンバー（打順に未登録の選手）
-    const benchMembers = computed(() => {
-      const assignedIds = new Set(lineup.value.filter(l => l.memberId).map(l => l.memberId));
-      if (useDP.value && fpMemberId.value) assignedIds.add(fpMemberId.value);
-      return playerMembers.value.filter(m => !assignedIds.has(m.id));
-    });
-
-    // ドラフト保存・復元
-    function loadDraft() {
-      try {
-        const d = JSON.parse(localStorage.getItem(SIM_DRAFT_KEY) || 'null');
-        if (!d) return;
-        useDP.value      = d.useDP     || false;
-        lineup.value     = d.lineup    || lineup.value;
-        fpMemberId.value = d.fpMemberId || '';
-        fpPosition.value = d.fpPosition || '';
-      } catch(e) {}
-    }
-    function saveDraft() {
-      localStorage.setItem(SIM_DRAFT_KEY, JSON.stringify({
-        useDP: useDP.value, lineup: lineup.value,
-        fpMemberId: fpMemberId.value, fpPosition: fpPosition.value,
-      }));
-      alert('ラインナップを保存しました');
-    }
-    function clearDraft() {
-      if (!confirm('ラインナップをリセットしますか？')) return;
-      lineup.value    = Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false }));
-      fpMemberId.value = '';
-      fpPosition.value = '';
-      useDP.value      = false;
-      localStorage.removeItem(SIM_DRAFT_KEY);
-    }
-
-    onMounted(loadDraft);
 
     // フィールド図
     const FIELD_POS_LIST = FIELD_POSITIONS;
@@ -1609,16 +1675,42 @@ const LineupSim = {
       navigator.clipboard?.writeText(copyText.value).then(() => alert('コピーしました！'));
     }
 
-    return { playerMembers, benchMembers, useDP, lineup, fpMemberId, fpPosition, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, setDP, dpOrder, onMemberSelect, saveDraft, clearDraft, showCopy, copyText, copyToClipboard, POSITIONS, posLabel, memberShortName, navigate, store, onDragStart, onDragOver, onDrop, dragFrom };
+    // ベンチ外メンバー
+    const benchMembers = computed(() => {
+      const assignedIds = new Set(lineup.value.filter(l => l.memberId).map(l => l.memberId));
+      if (useDP.value && fpMemberId.value) assignedIds.add(fpMemberId.value);
+      return playerMembers.value.filter(m => !assignedIds.has(m.id));
+    });
+    // 各スロットで選択可能な選手（他スロット割り当て済みを除外）
+    function availableForEntry(entry) {
+      const assignedIds = new Set(lineup.value.filter(l => l.memberId && l !== entry).map(l => l.memberId));
+      return playerMembers.value.filter(m => !assignedIds.has(m.id) || m.id === entry.memberId);
+    }
+
+    return { playerMembers, benchMembers, availableForEntry, useDP, lineup, fpMemberId, fpPosition, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, setDP, dpOrder, onMemberSelect, saveDraft, clearDraft, showCopy, copyText, copyToClipboard, POSITIONS, posLabel, memberShortName, navigate, store, onDragStart, onDragOver, onDrop, dragFrom, patterns, activePatternIdx, switchPattern, addPattern, copyPattern, deletePattern, renamePattern };
   },
   template: `
 <div class="max-w-2xl mx-auto px-4 py-6 pb-24">
-  <div class="flex items-center justify-between mb-4">
-    <h1 class="text-xl font-bold text-gray-800">🎯 ラインナップ</h1>
+  <div class="flex items-center justify-between mb-3">
+    <h1 class="text-xl font-bold text-gray-800">🎯 オーダー</h1>
     <div class="flex gap-2">
       <button @click="copyToClipboard" class="text-sm text-indigo-600 font-semibold border border-indigo-300 px-3 py-1.5 rounded-lg hover:bg-indigo-50">コピー</button>
       <button @click="clearDraft" class="text-sm text-gray-500 border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50">リセット</button>
     </div>
+  </div>
+
+  <!-- パターンタブ -->
+  <div class="flex gap-1.5 mb-4 overflow-x-auto pb-1">
+    <button v-for="(p, i) in patterns" :key="p.id"
+            @click="switchPattern(i)"
+            @dblclick="renamePattern()"
+            :class="activePatternIdx===i?'bg-indigo-600 text-white shadow':'bg-white border border-gray-300 text-gray-600'"
+            class="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap flex-shrink-0">
+      {{ p.name }}
+    </button>
+    <button @click="addPattern" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-600 whitespace-nowrap flex-shrink-0" title="新規パターン">＋ 新規</button>
+    <button @click="copyPattern" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-600 whitespace-nowrap flex-shrink-0" title="現在のパターンをコピー">📋 コピー</button>
+    <button v-if="patterns.length>1" @click="deletePattern" class="px-2 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-400 whitespace-nowrap flex-shrink-0">🗑</button>
   </div>
 
   <!-- フィールド図 -->
@@ -1683,7 +1775,7 @@ const LineupSim = {
         <select v-model="entry.memberId" @change="onMemberSelect(entry)"
                 class="w-full border rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
           <option value="">-</option>
-          <option v-for="m in playerMembers" :key="m.id" :value="m.id">{{ memberShortName(m) }}({{ m.grade }}年)</option>
+          <option v-for="m in availableForEntry(entry)" :key="m.id" :value="m.id">{{ memberShortName(m) }}({{ m.grade }}年)</option>
         </select>
       </div>
       <div class="col-span-4">
@@ -1727,7 +1819,7 @@ const LineupSim = {
 
   <!-- 保存ボタン -->
   <button @click="saveDraft" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 mb-4">
-    ラインナップを保存
+    オーダーを保存
   </button>
 
   <!-- テキスト出力 -->

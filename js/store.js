@@ -67,7 +67,7 @@ window.store = Vue.reactive({
       score: { us: Array(9).fill(0), them: Array(9).fill(0) },
       lineup: [], fpMemberId: '', fpPosition: '', useDP: false,
       attendance: [], atBats: [], pitcherLog: [],
-      result: null, notes: '', timeOfDay: '',
+      result: null, notes: '', timeOfDay: '', rainCancelled: false,
     };
     db.collection('events').doc(id).set({ ...defaults, ...e, id });
     return id;
