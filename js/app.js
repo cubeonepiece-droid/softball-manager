@@ -697,7 +697,8 @@ const EventDetail = {
       const len = innings.value;
       scoreUs.value   = Array.from({ length: len }, (_, i) => e.score?.us?.[i]   ?? 0);
       scoreThem.value = Array.from({ length: len }, (_, i) => e.score?.them?.[i] ?? 0);
-      lineup.value    = e.lineup?.length ? JSON.parse(JSON.stringify(e.lineup)) : Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false }));
+      const savedLineup = e.lineup?.length ? JSON.parse(JSON.stringify(e.lineup)).slice(0, 9) : [];
+      lineup.value = savedLineup.length ? savedLineup : Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false }));
       fpMemberId.value = e.fpMemberId || '';
       fpPosition.value = e.fpPosition || '';
       useDP.value      = e.useDP || false;
@@ -787,11 +788,14 @@ const EventDetail = {
       alert('出欠を保存しました');
     }
 
-    const memberGroups = computed(() => [
-      { label: '選手',         members: store.members.filter(m => !m.type || m.type === 'player') },
-      { label: '保護者',       members: store.members.filter(m => m.type === 'parent') },
-      { label: '監督・コーチ', members: store.members.filter(m => m.type === 'coach') },
-    ].filter(g => g.members.length > 0));
+    const memberGroups = computed(() => {
+      const isPractice = ev.value && ['practice', 'joint'].includes(ev.value.type);
+      return [
+        { label: '選手',         members: store.members.filter(m => !m.type || m.type === 'player') },
+        { label: '監督・コーチ', members: store.members.filter(m => m.type === 'coach') },
+        ...(!isPractice ? [{ label: '保護者', members: store.members.filter(m => m.type === 'parent') }] : []),
+      ].filter(g => g.members.length > 0);
+    });
 
     const attSummary = computed(() => {
       const isPractice = ev.value && ['practice', 'joint'].includes(ev.value.type);
