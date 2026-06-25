@@ -1583,19 +1583,18 @@ const LineupSim = {
           activePatternIdx.value = 0;
           applyPattern(saved[0]);
         } else {
-          // legacy localStorage
+          // localStorage から読み込み、そのままFirestoreに移行
+          let list = null;
           try {
-            const old = JSON.parse(localStorage.getItem(SIM_DRAFT_KEY) || 'null') ||
-                        JSON.parse(localStorage.getItem(SIM_PATTERNS_KEY) || 'null');
-            if (old) {
-              const list = Array.isArray(old) ? old : [{ ...makePattern('パターンA'), ...old }];
-              patterns.value = list;
-              applyPattern(list[0]);
-              return;
-            }
+            const raw = JSON.parse(localStorage.getItem(SIM_PATTERNS_KEY) || 'null') ||
+                        JSON.parse(localStorage.getItem(SIM_DRAFT_KEY)    || 'null');
+            if (raw) list = Array.isArray(raw) ? raw : [{ ...makePattern('パターンA'), ...raw }];
           } catch(e) {}
-          patterns.value = [makePattern('パターンA')];
-          applyPattern(patterns.value[0]);
+          if (!list) list = [makePattern('パターンA')];
+          patterns.value = list;
+          applyPattern(list[0]);
+          // Firestoreへ自動移行（クラウド同期）
+          store.saveLineupPatterns(JSON.parse(JSON.stringify(list)));
         }
       });
     }
