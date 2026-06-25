@@ -126,7 +126,22 @@ const Dashboard = {
         .reverse()
         .slice(0, 5)
     );
-    const rec = computed(() => store.record);
+    const rec = computed(() => {
+      const today = new Date().toISOString().slice(0, 10);
+      const [y, m] = today.split('-').map(Number);
+      const currentFY = m >= 4 ? y : y - 1;
+      const games = store.gameEvents.filter(e => {
+        if (!e.date || !e.result) return false;
+        const [ey, em] = e.date.split('-').map(Number);
+        return (em >= 4 ? ey : ey - 1) === currentFY;
+      });
+      return {
+        wins:   games.filter(e => e.result === 'win').length,
+        losses: games.filter(e => e.result === 'lose').length,
+        draws:  games.filter(e => e.result === 'draw').length,
+        total:  games.length,
+      };
+    });
     return { upcoming, recent, rec, store, navigate, totalScore };
   },
   template: `
