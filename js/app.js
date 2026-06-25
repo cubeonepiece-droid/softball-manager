@@ -26,18 +26,38 @@ function memberTypeLabel(code) {
 
 const EVENT_TYPES = [
   { code: 'game',       label: '公式戦',   color: 'indigo' },
-  { code: 'tournament', label: '大会',     color: 'red'    },
   { code: 'scrimmage',  label: '練習試合', color: 'blue'   },
   { code: 'practice',   label: '練習',     color: 'green'  },
   { code: 'joint',      label: '合同練習', color: 'teal'   },
   { code: 'social',     label: 'イベント', color: 'pink'   },
 ];
-const GAME_TYPES     = ['game', 'tournament', 'scrimmage'];
+const GAME_TYPES     = ['game', 'tournament', 'scrimmage']; // tournament kept for legacy data
 const PRACTICE_TYPES = ['practice', 'joint'];
 const SOCIAL_TYPES   = ['social'];
+const MAP_TYPES      = ['game', 'tournament', 'scrimmage', 'joint']; // types that show Google Maps
+const TOD_TYPES      = ['game', 'tournament', 'scrimmage', 'joint', 'practice']; // types with time-of-day tag
 function isGameType(type)   { return GAME_TYPES.includes(type); }
 function isSocialType(type) { return SOCIAL_TYPES.includes(type); }
-function eventTypeLabel(type) { return EVENT_TYPES.find(t => t.code === type)?.label || type; }
+function hasMapLink(type)   { return MAP_TYPES.includes(type); }
+function hasTimeOfDay(type) { return TOD_TYPES.includes(type); }
+function timeOfDayOpts(type) {
+  const p = type === 'practice';
+  return [
+    { value: 'allday',    label: p ? '一日練習' : '一日' },
+    { value: 'morning',   label: p ? '午前練習' : '午前' },
+    { value: 'afternoon', label: p ? '午後練習' : '午後' },
+  ];
+}
+function timeOfDayLabel(type, val) {
+  return (timeOfDayOpts(type).find(o => o.value === val) || {}).label || '';
+}
+function googleMapsUrl(location) {
+  return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(location);
+}
+function eventTypeLabel(type) {
+  if (type === 'tournament') return '公式戦'; // legacy
+  return EVENT_TYPES.find(t => t.code === type)?.label || type;
+}
 function memberShortName(m) { return m ? (m.shortName || m.name || '') : ''; }
 function memberFullName(m)  { return m ? (m.name || '') : ''; }
 
@@ -151,7 +171,7 @@ const Dashboard = {
          class="flex items-center gap-3 py-2 border-b last:border-0 cursor-pointer hover:bg-gray-50 rounded">
       <span class="text-xs px-2 py-1 rounded-full font-semibold"
             :class="['game','tournament','scrimmage'].includes(ev.type)?'bg-indigo-100 text-indigo-700':ev.type==='social'?'bg-pink-100 text-pink-700':'bg-green-100 text-green-700'">
-        {{ {'game':'公式戦','tournament':'大会','scrimmage':'練習試合','practice':'練習','joint':'合同練習','social':'イベント'}[ev.type]||'練習' }}
+        {{ {'game':'公式戦','tournament':'公式戦','scrimmage':'練習試合','practice':'練習','joint':'合同練習','social':'イベント'}[ev.type]||'練習' }}
       </span>
       <div>
         <p class="text-sm font-medium">{{ ev.date }} {{ ev.time }}</p>
@@ -390,7 +410,7 @@ const Schedule = {
     const modal = ref(false);
     const editing = ref(null);
     const form = reactive({
-      type: 'practice', date: '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 7, notes: ''
+      type: 'practice', date: '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 7, timeOfDay: '', notes: ''
     });
 
     function prevMonth() {
@@ -433,17 +453,19 @@ const Schedule = {
     }
     function openAdd(d) {
       editing.value = null;
-      Object.assign(form, { type: 'practice', date: d ? dateStr(d) : '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 7, notes: '' });
+      Object.assign(form, { type: 'practice', date: d ? dateStr(d) : '', time: '08:00', opponent: '', location: '大東小学校', homeAway: 'home', innings: 7, timeOfDay: '', notes: '' });
       modal.value = true;
     }
     function openEdit(ev) {
       editing.value = ev.id;
-      Object.assign(form, { type: ev.type||'practice', date: ev.date, time: ev.time||'', opponent: ev.opponent||'', location: ev.location||'', homeAway: ev.homeAway||'home', innings: ev.innings||7, notes: ev.notes||'' });
+      // legacy tournament → game
+      const type = ev.type === 'tournament' ? 'game' : (ev.type||'practice');
+      Object.assign(form, { type, date: ev.date, time: ev.time||'', opponent: ev.opponent||'', location: ev.location||'', homeAway: ev.homeAway||'home', innings: ev.innings||7, timeOfDay: ev.timeOfDay||'', notes: ev.notes||'' });
       modal.value = true;
     }
     function save() {
       if (!form.date) return alert('日付を選択してください');
-      const data = { type: form.type, date: form.date, time: form.time, opponent: form.opponent, location: form.location, homeAway: form.homeAway, innings: Number(form.innings), notes: form.notes };
+      const data = { type: form.type, date: form.date, time: form.time, opponent: form.opponent, location: form.location, homeAway: form.homeAway, innings: Number(form.innings), timeOfDay: form.timeOfDay, notes: form.notes };
       if (editing.value) { store.updateEvent(editing.value, data); modal.value = false; }
       else {
         const id = store.addEvent(data);
@@ -456,13 +478,13 @@ const Schedule = {
     }
     function goEvent(ev) { navigate('#/events/' + ev.id); }
     function evTypeBadgeClass(type) {
-      const t = EVENT_TYPES.find(x => x.code === type);
+      const code = type === 'tournament' ? 'game' : type; // legacy
+      const t = EVENT_TYPES.find(x => x.code === code);
       if (!t) return 'bg-gray-100 text-gray-700';
-      const c = t.color;
-      return `bg-${c}-100 text-${c}-700`;
+      return `bg-${t.color}-100 text-${t.color}-700`;
     }
 
-    return { calYear, calMonth, calDays, monthEvents, modal, form, editing, prevMonth, nextMonth, eventsOnDay, isToday, openAdd, openEdit, save, del, goEvent, navigate, EVENT_TYPES, isGameType, isSocialType, eventTypeLabel, selectType, evTypeBadgeClass };
+    return { calYear, calMonth, calDays, monthEvents, modal, form, editing, prevMonth, nextMonth, eventsOnDay, isToday, openAdd, openEdit, save, del, goEvent, navigate, EVENT_TYPES, isGameType, isSocialType, hasMapLink, hasTimeOfDay, timeOfDayOpts, timeOfDayLabel, googleMapsUrl, eventTypeLabel, selectType, evTypeBadgeClass };
   },
   template: `
 <div class="max-w-2xl mx-auto px-4 py-6">
@@ -506,9 +528,14 @@ const Schedule = {
             class="text-xs px-2 py-1 rounded-full font-semibold flex-shrink-0">
         {{ eventTypeLabel(ev.type) }}
       </span>
-      <div class="flex-1 cursor-pointer" @click="goEvent(ev)">
-        <p class="text-sm font-medium">{{ ev.date }} {{ ev.time }}</p>
-        <p class="text-xs text-gray-500">{{ isGameType(ev.type)?(ev.opponent||'相手未定')+(ev.location?' @ '+ev.location:'') : isSocialType(ev.type)?(ev.opponent||'イベント')+(ev.location?' @ '+ev.location:'') : (ev.location||'場所未定') }}</p>
+      <div class="flex-1 min-w-0 cursor-pointer" @click="goEvent(ev)">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <p class="text-sm font-medium">{{ ev.date }} {{ ev.time }}</p>
+          <span v-if="ev.timeOfDay" class="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">{{ timeOfDayLabel(ev.type, ev.timeOfDay) }}</span>
+        </div>
+        <p class="text-xs text-gray-500 truncate">{{ isGameType(ev.type)?(ev.opponent||'相手未定')+(ev.location?' @ '+ev.location:'') : isSocialType(ev.type)?(ev.opponent||'イベント')+(ev.location?' @ '+ev.location:'') : (ev.location||'場所未定') }}</p>
+        <a v-if="hasMapLink(ev.type) && ev.location" :href="googleMapsUrl(ev.location)" target="_blank" @click.stop
+           class="text-xs text-blue-500 underline mt-0.5 inline-block">🗺 地図を開く</a>
         <p v-if="isGameType(ev.type) && ev.result" :class="ev.result==='win'?'text-green-600':ev.result==='lose'?'text-red-500':'text-gray-500'"
            class="text-xs font-semibold mt-0.5">
           {{ ev.result==='win'?'● 勝利':ev.result==='lose'?'● 敗戦':'● 引分' }}
@@ -569,6 +596,16 @@ const Schedule = {
           <select v-model="form.innings" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
             <option v-for="n in [1,2,3,4,5,6,7,8,9]" :key="n" :value="n">{{ n }}回</option>
           </select>
+        </div>
+        <!-- 時間帯タグ -->
+        <div v-if="hasTimeOfDay(form.type)">
+          <label class="block text-sm font-medium text-gray-700 mb-2">時間帯</label>
+          <div class="flex gap-2 flex-wrap">
+            <button v-for="opt in timeOfDayOpts(form.type)" :key="opt.value"
+                    @click="form.timeOfDay = form.timeOfDay===opt.value ? '' : opt.value"
+                    :class="form.timeOfDay===opt.value?'bg-amber-500 text-white':'bg-gray-100 text-gray-700'"
+                    class="px-4 py-1.5 rounded-lg text-sm font-medium">{{ opt.label }}</button>
+          </div>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">メモ</label>
@@ -776,7 +813,7 @@ const EventDetail = {
     }
     const playerMembers = computed(() => store.members.filter(m => !m.type || m.type === 'player'));
 
-    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, isGameType, isSocialType, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store };
+    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -797,7 +834,15 @@ const EventDetail = {
       <div v-if="isGameType(ev.type)"><span class="text-gray-500">相手：</span><span class="font-medium">{{ ev.opponent||'未定' }}</span></div>
       <div v-if="isGameType(ev.type)"><span class="text-gray-500">H/A：</span><span class="font-medium">{{ ev.homeAway==='home'?'ホーム':'アウェイ' }}</span></div>
       <div v-if="isSocialType(ev.type)"><span class="text-gray-500">イベント名：</span><span class="font-medium">{{ ev.opponent||'未定' }}</span></div>
-      <div><span class="text-gray-500">場所：</span><span class="font-medium">{{ ev.location||'未定' }}</span></div>
+      <div v-if="ev.timeOfDay" class="col-span-2">
+        <span class="text-gray-500">時間帯：</span>
+        <span class="inline-block bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-medium ml-1">{{ timeOfDayLabel(ev.type, ev.timeOfDay) }}</span>
+      </div>
+      <div class="col-span-2">
+        <span class="text-gray-500">場所：</span><span class="font-medium">{{ ev.location||'未定' }}</span>
+        <a v-if="hasMapLink(ev.type) && ev.location" :href="googleMapsUrl(ev.location)" target="_blank"
+           class="ml-2 text-xs text-blue-500 underline">🗺 地図</a>
+      </div>
     </div>
   </div>
 
