@@ -207,21 +207,21 @@ const Members = {
     const modal = ref(false);
     const editing = ref(null);
     const filterType = ref('all');
-    const form = reactive({ type: 'player', shortName: '', name: '', grade: 1, number: '', positions: [], joinDate: '', photo: '', notes: '' });
+    const form = reactive({ type: 'player', shortName: '', name: '', grade: 1, number: '', positions: [], joinDate: '', photo: '', captain: false, viceCaptain: false, notes: '' });
 
     function openAdd() {
       editing.value = null;
-      Object.assign(form, { type: 'player', shortName: '', name: '', grade: 1, number: '', positions: [], joinDate: '', photo: '', notes: '' });
+      Object.assign(form, { type: 'player', shortName: '', name: '', grade: 1, number: '', positions: [], joinDate: '', photo: '', captain: false, viceCaptain: false, notes: '' });
       modal.value = true;
     }
     function openEdit(m) {
       editing.value = m.id;
-      Object.assign(form, { type: m.type||'player', shortName: m.shortName||'', name: m.name||'', grade: m.grade||1, number: m.number||'', positions: [...(m.positions||[])], joinDate: m.joinDate||'', photo: m.photo||'', notes: m.notes||'' });
+      Object.assign(form, { type: m.type||'player', shortName: m.shortName||'', name: m.name||'', grade: m.grade||1, number: m.number||'', positions: [...(m.positions||[])], joinDate: m.joinDate||'', photo: m.photo||'', captain: m.captain||false, viceCaptain: m.viceCaptain||false, notes: m.notes||'' });
       modal.value = true;
     }
     function save() {
       if (!form.name.trim()) return alert('フルネームを入力してください');
-      const data = { type: form.type, name: form.name.trim(), shortName: form.shortName.trim(), grade: form.type==='player'?Number(form.grade):null, number: form.type==='player'?form.number:'', positions: form.type==='player'?[...form.positions]:[], joinDate: form.joinDate, photo: form.photo, notes: form.notes };
+      const data = { type: form.type, name: form.name.trim(), shortName: form.shortName.trim(), grade: form.type==='player'?Number(form.grade):null, number: form.type==='player'?form.number:'', positions: form.type==='player'?[...form.positions]:[], joinDate: form.joinDate, photo: form.photo, captain: form.type==='player'?form.captain:false, viceCaptain: form.type==='player'?form.viceCaptain:false, notes: form.notes };
       if (editing.value) store.updateMember(editing.value, data);
       else store.addMember(data);
       modal.value = false;
@@ -247,6 +247,10 @@ const Members = {
       const ms = filterType.value === 'all' ? store.members : store.members.filter(m => (m.type||'player') === filterType.value);
       const typeOrder = { player: 0, coach: 1, parent: 2 };
       return [...ms].sort((a, b) => {
+        // キャプテン・副キャプテンを最上位に
+        const capA = a.captain ? 0 : a.viceCaptain ? 1 : 2;
+        const capB = b.captain ? 0 : b.viceCaptain ? 1 : 2;
+        if (capA !== capB) return capA - capB;
         const ta = typeOrder[a.type||'player'] ?? 9, tb = typeOrder[b.type||'player'] ?? 9;
         if (ta !== tb) return ta - tb;
         const gradeDiff = (b.grade||0) - (a.grade||0); // 6年→1年の降順
@@ -301,6 +305,8 @@ const Members = {
       <div class="flex-1 min-w-0">
         <p class="font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
           {{ m.name }}
+          <span v-if="m.captain" class="text-xs px-2 py-0.5 rounded-full font-bold bg-yellow-400 text-yellow-900">👑 C</span>
+          <span v-if="m.viceCaptain" class="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-200 text-orange-800">VC</span>
           <span :class="typeBadgeClass(m.type)" class="text-xs px-2 py-0.5 rounded-full font-medium">{{ memberTypeLabel(m.type||'player') }}</span>
           <span v-if="m.type==='player'||!m.type" class="text-xs text-gray-500">{{ m.grade }}年生</span>
           <span v-if="m.number" class="text-xs text-gray-400">#{{ m.number }}</span>
@@ -342,6 +348,19 @@ const Members = {
           <input v-model="form.shortName" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="太郎（省略時はフルネームを使用）">
         </div>
         <template v-if="form.type==='player'">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">役職</label>
+            <div class="flex gap-3">
+              <label class="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" v-model="form.captain" @change="form.captain && (form.viceCaptain=false)" class="accent-yellow-500 w-4 h-4">
+                <span class="text-sm font-medium">👑 キャプテン</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" v-model="form.viceCaptain" @change="form.viceCaptain && (form.captain=false)" class="accent-orange-400 w-4 h-4">
+                <span class="text-sm font-medium">VC 副キャプテン</span>
+              </label>
+            </div>
+          </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">学年</label>
