@@ -749,7 +749,7 @@ const EventDetail = {
     function memberName(id) {
       if (!id) return '';
       const m = store.getMember(id);
-      return m ? m.name : '';
+      return memberShortName(m);
     }
 
     function inningLabel(i) {
@@ -1015,7 +1015,7 @@ const EventDetail = {
           <div class="col-span-5">
             <select v-model="entry.memberId" class="w-full border rounded-lg px-1 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
               <option value="">選択</option>
-              <option v-for="m in sortedMembers" :key="m.id" :value="m.id">{{ m.name }}({{ m.grade }}年)</option>
+              <option v-for="m in sortedMembers" :key="m.id" :value="m.id">{{ memberShortName(m) }}({{ m.grade }}年)</option>
             </select>
           </div>
           <div class="col-span-4">
@@ -1041,7 +1041,7 @@ const EventDetail = {
             <label class="block text-xs text-amber-700 mb-1">FP選手</label>
             <select v-model="fpMemberId" class="w-full border border-amber-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
               <option value="">選択</option>
-              <option v-for="m in sortedMembers" :key="m.id" :value="m.id">{{ m.name }}({{ m.grade }}年)</option>
+              <option v-for="m in sortedMembers" :key="m.id" :value="m.id">{{ memberShortName(m) }}({{ m.grade }}年)</option>
             </select>
           </div>
           <div>
@@ -1095,7 +1095,7 @@ const EventDetail = {
         <div v-for="m in group.members" :key="m.id"
              class="flex items-center px-4 py-3 border-b last:border-0">
           <div class="flex-1">
-            <p class="text-sm font-medium text-gray-800">{{ m.name }}</p>
+            <p class="text-sm font-medium text-gray-800">{{ memberShortName(m) }}</p>
             <p v-if="m.grade" class="text-xs text-gray-400">{{ m.grade }}年生</p>
           </div>
           <div class="flex gap-1.5">
