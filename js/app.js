@@ -794,12 +794,24 @@ const EventDetail = {
     ].filter(g => g.members.length > 0));
 
     const attSummary = computed(() => {
-      const all = store.members;
-      const attending  = all.filter(m => getAttStatus(m.id) === 'attending').length;
-      const absent     = all.filter(m => getAttStatus(m.id) === 'absent').length;
-      const undecided  = all.filter(m => { const a = attendance.value.find(x=>x.memberId===m.id); return a && a.status==='unknown'; }).length;
-      const notEntered = all.filter(m => (!m.type||m.type==='player') && !attendance.value.find(x=>x.memberId===m.id)).length;
-      return { attending, absent, undecided, notEntered, total: all.length };
+      const isPractice = ev.value && ['practice', 'joint'].includes(ev.value.type);
+      const summarizeGroup = (members) => {
+        const total = members.length;
+        const attending  = members.filter(m => getAttStatus(m.id) === 'attending').length;
+        const absent     = members.filter(m => getAttStatus(m.id) === 'absent').length;
+        const undecided  = members.filter(m => { const a = attendance.value.find(x=>x.memberId===m.id); return a && a.status==='unknown'; }).length;
+        const notEntered = members.filter(m => !attendance.value.find(x=>x.memberId===m.id)).length;
+        return { total, attending, absent, undecided, notEntered };
+      };
+      const players = store.members.filter(m => !m.type || m.type === 'player');
+      const coaches  = store.members.filter(m => m.type === 'coach');
+      const parents  = store.members.filter(m => m.type === 'parent');
+      return {
+        players:  summarizeGroup(players),
+        coaches:  summarizeGroup(coaches),
+        parents:  isPractice ? null : summarizeGroup(parents),
+        total:    store.members.length,
+      };
     });
 
     // ── 打席・投手記録 ──
@@ -877,7 +889,40 @@ const EventDetail = {
     }
     const playerMembers = computed(() => store.members.filter(m => !m.type || m.type === 'player'));
 
-    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, addInning, removeInning, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store };
+    // 出席中の選手のみ（大会・練習試合時はフィルタ）
+    const attendingPlayerMembers = computed(() => {
+      if (!ev.value || !isGameType(ev.value.type)) return playerMembers.value;
+      const attendingIds = new Set(attendance.value.filter(a => a.status === 'attending').map(a => a.memberId));
+      const lineupIds = new Set(lineup.value.filter(l => l.memberId).map(l => l.memberId));
+      return playerMembers.value.filter(m => attendingIds.has(m.id) || lineupIds.has(m.id));
+    });
+    const benchMembers = computed(() => {
+      const assignedIds = new Set(lineup.value.filter(l => l.memberId).map(l => l.memberId));
+      if (fpMemberId.value) assignedIds.add(fpMemberId.value);
+      return attendingPlayerMembers.value.filter(m => !assignedIds.has(m.id));
+    });
+    function availableForEntry(entry) {
+      const assignedIds = new Set(lineup.value.filter(l => l.memberId && l !== entry).map(l => l.memberId));
+      return attendingPlayerMembers.value.filter(m => !assignedIds.has(m.id) || m.id === entry.memberId);
+    }
+    const dragFrom = ref(null);
+    function onDragStart(idx) { dragFrom.value = idx; }
+    function onDragOver(e) { e.preventDefault(); }
+    function onDrop(idx) {
+      if (dragFrom.value === null || dragFrom.value === idx) { dragFrom.value = null; return; }
+      const arr = lineup.value;
+      const [moved] = arr.splice(dragFrom.value, 1);
+      arr.splice(idx, 0, moved);
+      arr.forEach((l, i) => l.order = i + 1);
+      dragFrom.value = null;
+    }
+    function swapScores() {
+      const tmp = scoreUs.value.slice();
+      scoreUs.value = scoreThem.value.slice();
+      scoreThem.value = tmp;
+    }
+
+    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, addInning, removeInning, swapScores, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, attendingPlayerMembers, benchMembers, availableForEntry, dragFrom, onDragStart, onDragOver, onDrop, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -931,8 +976,6 @@ const EventDetail = {
               class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all">オーダー</button>
       <button @click="tab='attendance'" :class="tab==='attendance'?'bg-white shadow text-indigo-700':'text-gray-500'"
               class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all">出欠</button>
-      <button v-if="isGameType(ev.type)" @click="tab='simulate'" :class="tab==='simulate'?'bg-white shadow text-indigo-700':'text-gray-500'"
-              class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all">シミュレ</button>
     </div>
 
     <!-- ===== スコアタブ ===== -->
@@ -942,6 +985,26 @@ const EventDetail = {
            :class="ev.result==='win'?'bg-green-100 text-green-700':ev.result==='lose'?'bg-red-100 text-red-500':'bg-gray-100 text-gray-600'">
         {{ ev.result==='win'?'勝利 🎉':ev.result==='lose'?'敗戦':'引き分け' }}
         &nbsp;{{ totalUs }} - {{ totalThem }}
+      </div>
+
+      <!-- 先攻/後攻 スワップ -->
+      <div class="bg-white rounded-xl shadow p-3 mb-3 flex items-center justify-between">
+        <div class="flex items-center gap-2 text-sm">
+          <span class="text-gray-500">先後：</span>
+          <span class="font-bold" :class="ev.homeAway==='home'?'text-indigo-600':'text-orange-500'">
+            {{ ev.homeAway==='home'?'先攻':'後攻' }}
+          </span>
+        </div>
+        <div class="flex gap-2">
+          <button @click="store.updateEvent(ev.id,{homeAway:ev.homeAway==='home'?'away':'home'})"
+                  class="text-xs border border-indigo-300 rounded-lg px-3 py-1.5 text-indigo-600 font-semibold hover:bg-indigo-50">
+            ⇄ 先後切替
+          </button>
+          <button @click="swapScores"
+                  class="text-xs border border-gray-300 rounded-lg px-3 py-1.5 text-gray-500 font-semibold hover:bg-gray-50">
+            ↕ 得点入替
+          </button>
+        </div>
       </div>
 
       <div class="flex items-center justify-between mb-2 px-1">
@@ -993,95 +1056,172 @@ const EventDetail = {
 
     <!-- ===== オーダータブ ===== -->
     <div v-if="tab==='lineup'">
-      <!-- DP/FP 切り替え -->
-      <div class="bg-white rounded-xl shadow p-3 mb-4 flex items-center gap-3">
-        <label class="flex items-center gap-2 cursor-pointer">
+      <!-- 出席フィルター注記 -->
+      <div v-if="isGameType(ev.type)" class="bg-blue-50 rounded-xl px-3 py-2 mb-3 text-xs text-blue-600 font-medium">
+        ⚾ 出欠で「参加」のメンバーのみ表示されます
+      </div>
+
+      <!-- フィールド図 -->
+      <div class="bg-white rounded-2xl shadow overflow-hidden mb-4">
+        <svg viewBox="0 0 320 260" style="width:100%;display:block">
+          <ellipse cx="160" cy="120" rx="152" ry="130" fill="#4ade80" opacity="0.35"/>
+          <polygon points="160,230 252,145 160,58 68,145" fill="#fbbf24" opacity="0.4"/>
+          <line x1="160" y1="230" x2="252" y2="145" stroke="white" stroke-width="1.5"/>
+          <line x1="252" y1="145" x2="160" y2="58" stroke="white" stroke-width="1.5"/>
+          <line x1="160" y1="58" x2="68" y2="145" stroke="white" stroke-width="1.5"/>
+          <line x1="68" y1="145" x2="160" y2="230" stroke="white" stroke-width="1.5"/>
+          <circle cx="160" cy="152" r="9" fill="#d97706" opacity="0.8"/>
+          <rect x="153" y="222" width="14" height="14" fill="white" rx="2"/>
+          <rect x="244" y="137" width="14" height="14" fill="white" rx="2"/>
+          <rect x="153" y="50" width="14" height="14" fill="white" rx="2"/>
+          <rect x="62" y="137" width="14" height="14" fill="white" rx="2"/>
+          <g v-for="fp in FIELD_POS_LIST" :key="fp.code" @click="selectedPos=fp.code" style="cursor:pointer">
+            <circle :cx="fp.x" :cy="fp.y" r="20"
+                    :fill="simPlayerName(fp.code)?'#6366f1':'rgba(255,255,255,0.88)'"
+                    :stroke="selectedPos===fp.code?'#f59e0b':'#6366f1'"
+                    stroke-width="2"/>
+            <text :x="fp.x" :y="fp.y-5" text-anchor="middle" dominant-baseline="middle"
+                  font-size="7" :fill="simPlayerName(fp.code)?'#c7d2fe':'#9ca3af'">{{ fp.label }}</text>
+            <text :x="fp.x" :y="fp.y+7" text-anchor="middle" dominant-baseline="middle"
+                  font-size="9" font-weight="bold"
+                  :fill="simPlayerName(fp.code)?'white':'#6366f1'">
+              {{ simPlayerName(fp.code) || '+' }}
+            </text>
+          </g>
+        </svg>
+      </div>
+
+      <!-- DP/FP -->
+      <div class="bg-white rounded-2xl shadow p-3 mb-4 flex items-center gap-3">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
           <input type="checkbox" v-model="useDP" class="accent-indigo-600 w-4 h-4">
-          <span class="text-sm font-medium">DP / FP ルールを使用する</span>
+          <span class="text-sm font-medium text-gray-700">DP / FP ルールを使用する</span>
         </label>
       </div>
 
-      <!-- 打順表 -->
+      <!-- 打順テーブル（ドラッグ対応） -->
       <div class="bg-white rounded-2xl shadow overflow-hidden mb-4">
-        <div class="bg-indigo-600 text-white text-xs grid grid-cols-12 px-3 py-2 font-semibold">
-          <div class="col-span-1">打順</div>
-          <div class="col-span-5">選手</div>
+        <div class="grid gap-0 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 border-b"
+             :class="useDP ? 'grid-cols-12' : 'grid-cols-11'">
+          <div class="col-span-1 text-center">≡</div>
+          <div class="col-span-1">#</div>
+          <div class="col-span-4">選手</div>
           <div class="col-span-4">守備位置</div>
           <div v-if="useDP" class="col-span-2 text-center">DP</div>
         </div>
-        <div v-for="entry in lineup" :key="entry.order"
-             class="grid grid-cols-12 gap-1 px-2 py-1.5 border-b last:border-0 items-center">
-          <div class="col-span-1 text-center font-bold text-gray-600 text-sm">{{ entry.order }}</div>
-          <div class="col-span-5">
-            <select v-model="entry.memberId" class="w-full border rounded-lg px-1 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
-              <option value="">選択</option>
-              <option v-for="m in sortedMembers" :key="m.id" :value="m.id">{{ memberShortName(m) }}({{ m.grade }}年)</option>
+        <div v-for="(entry, idx) in lineup" :key="entry.order"
+             draggable="true"
+             @dragstart="onDragStart(idx)"
+             @dragover="onDragOver"
+             @drop="onDrop(idx)"
+             :class="dragFrom===idx ? 'opacity-40' : ''"
+             class="grid gap-1 items-center px-2 py-2 border-b last:border-0 transition-opacity"
+             :style="useDP ? 'grid-template-columns:repeat(12,minmax(0,1fr))' : 'grid-template-columns:repeat(11,minmax(0,1fr))'">
+          <div class="col-span-1 text-center text-gray-400 cursor-grab active:cursor-grabbing text-base select-none">⠿</div>
+          <div class="col-span-1 text-sm font-bold text-indigo-600">{{ entry.order }}</div>
+          <div class="col-span-4">
+            <select v-model="entry.memberId"
+                    class="w-full border rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
+              <option value="">-</option>
+              <option v-for="m in availableForEntry(entry)" :key="m.id" :value="m.id">{{ memberShortName(m) }}({{ m.grade }}年)</option>
             </select>
           </div>
           <div class="col-span-4">
-            <select v-model="entry.position" class="w-full border rounded-lg px-1 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
+            <select v-model="entry.position"
+                    class="w-full border rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
               <option value="">-</option>
               <option v-for="p in POSITIONS" :key="p.code" :value="p.code">{{ p.label }}</option>
             </select>
           </div>
           <div v-if="useDP" class="col-span-2 flex justify-center">
-            <input type="radio" name="dp" :checked="entry.isDP" @change="setDP(entry.order)" class="accent-indigo-600 w-4 h-4">
+            <input type="radio" name="dp_ev" :checked="entry.isDP" @change="setDP(entry.order)" class="accent-indigo-600 w-4 h-4">
           </div>
         </div>
-      </div>
-
-      <!-- FP設定 -->
-      <div v-if="useDP" class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
-        <h3 class="text-sm font-bold text-amber-800 mb-3">
-          FP（フレックスプレイヤー）設定
-          <span class="text-xs font-normal ml-2 text-amber-600">守備のみ・打順なし</span>
-        </h3>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs text-amber-700 mb-1">FP選手</label>
-            <select v-model="fpMemberId" class="w-full border border-amber-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
+        <!-- FP -->
+        <div v-if="useDP" class="bg-amber-50 border-t border-amber-200 px-3 py-3">
+          <p class="text-xs font-bold text-amber-700 mb-2">FP（フレックスプレイヤー）</p>
+          <div class="grid grid-cols-2 gap-2">
+            <select v-model="fpMemberId" class="border border-amber-300 rounded-lg px-2 py-1.5 text-xs bg-white">
               <option value="">選択</option>
-              <option v-for="m in sortedMembers" :key="m.id" :value="m.id">{{ memberShortName(m) }}({{ m.grade }}年)</option>
+              <option v-for="m in attendingPlayerMembers" :key="m.id" :value="m.id">{{ memberShortName(m) }}</option>
             </select>
-          </div>
-          <div>
-            <label class="block text-xs text-amber-700 mb-1">守備位置</label>
-            <select v-model="fpPosition" class="w-full border border-amber-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
-              <option value="">-</option>
+            <select v-model="fpPosition" class="border border-amber-300 rounded-lg px-2 py-1.5 text-xs bg-white">
+              <option value="">守備位置</option>
               <option v-for="p in POSITIONS" :key="p.code" :value="p.code">{{ p.label }}</option>
             </select>
           </div>
         </div>
-        <p class="text-xs text-amber-600 mt-2">
-          DP（打順 {{ dpOrder || '?' }}番）が FP の代わりに打席に立ちます
-        </p>
+      </div>
+
+      <!-- ベンチ外 -->
+      <div v-if="benchMembers.length" class="bg-white rounded-2xl shadow p-4 mb-4">
+        <p class="text-xs font-semibold text-gray-500 mb-2">ベンチ外（{{ benchMembers.length }}名）</p>
+        <div class="flex flex-wrap gap-2">
+          <span v-for="m in benchMembers" :key="m.id"
+                class="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full">
+            {{ memberShortName(m) }}({{ m.grade }}年)
+          </span>
+        </div>
       </div>
 
       <!-- オーダー保存 -->
       <button @click="saveLineup" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700">
         オーダーを保存
       </button>
+
+      <!-- ポジション選択パネル -->
+      <div v-if="selectedPos" class="fixed inset-x-4 bottom-20 bg-white rounded-2xl shadow-2xl border p-4 z-50">
+        <p class="text-sm font-bold mb-3 text-gray-700">
+          「{{ (FIELD_POS_LIST.find(p=>p.code===selectedPos)||{}).label }}」の選手を選択
+        </p>
+        <div class="grid grid-cols-3 gap-2 max-h-44 overflow-y-auto">
+          <button v-for="m in attendingPlayerMembers" :key="m.id"
+                  @click="simAssign(selectedPos, m.id)"
+                  class="px-2 py-2 rounded-lg border text-sm hover:bg-indigo-50 text-left truncate"
+                  :class="lineup.some(l=>l.memberId===m.id&&l.position===selectedPos)?'border-indigo-500 bg-indigo-50 font-semibold':''">
+            {{ memberShortName(m) }}
+          </button>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <button @click="simAssign(selectedPos,'')" class="flex-1 py-2 border rounded-lg text-sm text-red-400 hover:bg-red-50">削除</button>
+          <button @click="selectedPos=null" class="flex-1 py-2 border rounded-lg text-sm text-gray-500 hover:bg-gray-50">キャンセル</button>
+        </div>
+      </div>
     </div>
 
     <!-- ===== 出欠タブ ===== -->
     <div v-if="tab==='attendance'">
-      <!-- サマリー -->
-      <div class="grid grid-cols-4 gap-2 mb-4">
-        <div class="bg-green-50 rounded-xl p-2 text-center">
-          <p class="text-xl font-bold text-green-600">{{ attSummary.attending }}</p>
-          <p class="text-xs text-gray-500">参加</p>
+      <!-- グループ別サマリー -->
+      <div class="space-y-2 mb-4">
+        <!-- 選手 -->
+        <div class="bg-white rounded-xl shadow p-3">
+          <p class="text-xs font-semibold text-gray-500 mb-2">⚾ 選手 ({{ attSummary.players.total }}名)</p>
+          <div class="grid grid-cols-4 gap-1 text-center">
+            <div class="bg-green-50 rounded-lg p-1"><p class="text-lg font-bold text-green-600">{{ attSummary.players.attending }}</p><p class="text-xs text-gray-400">参加</p></div>
+            <div class="bg-red-50 rounded-lg p-1"><p class="text-lg font-bold text-red-500">{{ attSummary.players.absent }}</p><p class="text-xs text-gray-400">不参加</p></div>
+            <div class="bg-amber-50 rounded-lg p-1"><p class="text-lg font-bold text-amber-500">{{ attSummary.players.undecided }}</p><p class="text-xs text-gray-400">未定</p></div>
+            <div class="bg-slate-50 rounded-lg p-1"><p class="text-lg font-bold text-slate-400">{{ attSummary.players.notEntered }}</p><p class="text-xs text-gray-400">未入力</p></div>
+          </div>
         </div>
-        <div class="bg-red-50 rounded-xl p-2 text-center">
-          <p class="text-xl font-bold text-red-500">{{ attSummary.absent }}</p>
-          <p class="text-xs text-gray-500">不参加</p>
+        <!-- 監督・コーチ -->
+        <div v-if="attSummary.coaches.total > 0" class="bg-white rounded-xl shadow p-3">
+          <p class="text-xs font-semibold text-gray-500 mb-2">👨‍💼 監督・コーチ ({{ attSummary.coaches.total }}名)</p>
+          <div class="grid grid-cols-4 gap-1 text-center">
+            <div class="bg-green-50 rounded-lg p-1"><p class="text-lg font-bold text-green-600">{{ attSummary.coaches.attending }}</p><p class="text-xs text-gray-400">参加</p></div>
+            <div class="bg-red-50 rounded-lg p-1"><p class="text-lg font-bold text-red-500">{{ attSummary.coaches.absent }}</p><p class="text-xs text-gray-400">不参加</p></div>
+            <div class="bg-amber-50 rounded-lg p-1"><p class="text-lg font-bold text-amber-500">{{ attSummary.coaches.undecided }}</p><p class="text-xs text-gray-400">未定</p></div>
+            <div class="bg-slate-50 rounded-lg p-1"><p class="text-lg font-bold text-slate-400">{{ attSummary.coaches.notEntered }}</p><p class="text-xs text-gray-400">未入力</p></div>
+          </div>
         </div>
-        <div class="bg-amber-50 rounded-xl p-2 text-center">
-          <p class="text-xl font-bold text-amber-500">{{ attSummary.undecided }}</p>
-          <p class="text-xs text-gray-500">未定</p>
-        </div>
-        <div class="bg-slate-50 rounded-xl p-2 text-center">
-          <p class="text-xl font-bold text-slate-400">{{ attSummary.notEntered }}</p>
-          <p class="text-xs text-gray-500">未入力</p>
+        <!-- 保護者（練習以外のみ） -->
+        <div v-if="attSummary.parents && attSummary.parents.total > 0" class="bg-white rounded-xl shadow p-3">
+          <p class="text-xs font-semibold text-gray-500 mb-2">👪 保護者 ({{ attSummary.parents.total }}名)</p>
+          <div class="grid grid-cols-4 gap-1 text-center">
+            <div class="bg-green-50 rounded-lg p-1"><p class="text-lg font-bold text-green-600">{{ attSummary.parents.attending }}</p><p class="text-xs text-gray-400">参加</p></div>
+            <div class="bg-red-50 rounded-lg p-1"><p class="text-lg font-bold text-red-500">{{ attSummary.parents.absent }}</p><p class="text-xs text-gray-400">不参加</p></div>
+            <div class="bg-amber-50 rounded-lg p-1"><p class="text-lg font-bold text-amber-500">{{ attSummary.parents.undecided }}</p><p class="text-xs text-gray-400">未定</p></div>
+            <div class="bg-slate-50 rounded-lg p-1"><p class="text-lg font-bold text-slate-400">{{ attSummary.parents.notEntered }}</p><p class="text-xs text-gray-400">未入力</p></div>
+          </div>
         </div>
       </div>
 
@@ -1222,82 +1362,6 @@ const EventDetail = {
       </div>
     </div>
 
-    <!-- ===== シミュレーションタブ ===== -->
-    <div v-if="tab==='simulate'">
-      <!-- フィールド図 -->
-      <div class="bg-white rounded-2xl shadow overflow-hidden mb-4">
-        <svg viewBox="0 0 320 260" style="width:100%;display:block">
-          <!-- 外野芝 -->
-          <ellipse cx="160" cy="120" rx="152" ry="130" fill="#4ade80" opacity="0.35"/>
-          <!-- 内野土 -->
-          <polygon points="160,230 252,145 160,58 68,145" fill="#fbbf24" opacity="0.4"/>
-          <!-- ベースライン -->
-          <line x1="160" y1="230" x2="252" y2="145" stroke="white" stroke-width="1.5"/>
-          <line x1="252" y1="145" x2="160" y2="58" stroke="white" stroke-width="1.5"/>
-          <line x1="160" y1="58" x2="68" y2="145" stroke="white" stroke-width="1.5"/>
-          <line x1="68" y1="145" x2="160" y2="230" stroke="white" stroke-width="1.5"/>
-          <!-- ピッチャーズマウンド -->
-          <circle cx="160" cy="152" r="9" fill="#d97706" opacity="0.8"/>
-          <!-- ベース -->
-          <rect x="153" y="222" width="14" height="14" fill="white" rx="2"/>
-          <rect x="244" y="137" width="14" height="14" fill="white" rx="2"/>
-          <rect x="153" y="50" width="14" height="14" fill="white" rx="2"/>
-          <rect x="62" y="137" width="14" height="14" fill="white" rx="2"/>
-          <!-- 各ポジション -->
-          <g v-for="fp in FIELD_POS_LIST" :key="fp.code"
-             @click="selectedPos=fp.code" style="cursor:pointer">
-            <circle :cx="fp.x" :cy="fp.y" r="20"
-                    :fill="simPlayerName(fp.code)?'#6366f1':'rgba(255,255,255,0.88)'"
-                    :stroke="selectedPos===fp.code?'#f59e0b':'#6366f1'"
-                    stroke-width="2"/>
-            <text :x="fp.x" :y="fp.y-5" text-anchor="middle" dominant-baseline="middle"
-                  font-size="7" :fill="simPlayerName(fp.code)?'#c7d2fe':'#9ca3af'">{{ fp.label }}</text>
-            <text :x="fp.x" :y="fp.y+7" text-anchor="middle" dominant-baseline="middle"
-                  font-size="9" font-weight="bold"
-                  :fill="simPlayerName(fp.code)?'white':'#6366f1'">
-              {{ simPlayerName(fp.code) || '+' }}
-            </text>
-          </g>
-        </svg>
-      </div>
-
-      <!-- 打順一覧 -->
-      <div class="bg-white rounded-2xl shadow overflow-hidden mb-4">
-        <div class="px-4 py-2 border-b bg-gray-50 text-xs font-semibold text-gray-500">打順</div>
-        <div v-for="entry in lineup" :key="entry.order"
-             class="flex items-center gap-3 px-4 py-2.5 border-b last:border-0">
-          <span class="text-sm font-bold text-indigo-600 w-5">{{ entry.order }}</span>
-          <span class="text-sm font-medium flex-1">
-            {{ entry.memberId ? memberShortName(store.getMember(entry.memberId)) : '未設定' }}
-          </span>
-          <span class="text-xs text-gray-400 w-10">{{ entry.position ? posLabel(entry.position) : '-' }}</span>
-          <span v-if="entry.isDP" class="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">DP</span>
-        </div>
-      </div>
-
-      <button @click="saveLineup" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700">
-        オーダーを保存
-      </button>
-
-      <!-- ポジション選択パネル -->
-      <div v-if="selectedPos" class="fixed inset-x-4 bottom-20 bg-white rounded-2xl shadow-2xl border p-4 z-50">
-        <p class="text-sm font-bold mb-3 text-gray-700">
-          「{{ (FIELD_POS_LIST.find(p=>p.code===selectedPos)||{}).label }}」の選手を選択
-        </p>
-        <div class="grid grid-cols-3 gap-2 max-h-44 overflow-y-auto">
-          <button v-for="m in playerMembers" :key="m.id"
-                  @click="simAssign(selectedPos, m.id)"
-                  class="px-2 py-2 rounded-lg border text-sm hover:bg-indigo-50 text-left truncate"
-                  :class="lineup.some(l=>l.memberId===m.id&&l.position===selectedPos)?'border-indigo-500 bg-indigo-50 font-semibold':''">
-            {{ memberShortName(m) }}
-          </button>
-        </div>
-        <div class="flex gap-2 mt-3">
-          <button @click="simAssign(selectedPos, '')" class="flex-1 py-2 border rounded-lg text-sm text-red-400 hover:bg-red-50">削除</button>
-          <button @click="selectedPos=null" class="flex-1 py-2 border rounded-lg text-sm text-gray-500 hover:bg-gray-50">キャンセル</button>
-        </div>
-      </div>
-    </div>
   </div>
 </div>
   `
