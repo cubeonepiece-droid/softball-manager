@@ -30,6 +30,7 @@ const EVENT_TYPES = [
   { code: 'joint',      label: '合同練習', color: 'teal'   },
   { code: 'game',       label: '大会',     color: 'indigo' },
   { code: 'social',     label: 'イベント', color: 'pink'   },
+  { code: 'holiday',    label: '休み',     color: 'gray'   },
 ];
 const GAME_TYPES     = ['game', 'tournament', 'scrimmage']; // tournament kept for legacy data
 const PRACTICE_TYPES = ['practice', 'joint'];
@@ -185,8 +186,8 @@ const Dashboard = {
          @click="navigate('#/events/' + ev.id)"
          class="flex items-center gap-3 py-2 border-b last:border-0 cursor-pointer hover:bg-gray-50 rounded">
       <span class="text-xs px-2 py-1 rounded-full font-semibold"
-            :class="['game','tournament','scrimmage'].includes(ev.type)?'bg-indigo-100 text-indigo-700':ev.type==='social'?'bg-pink-100 text-pink-700':'bg-green-100 text-green-700'">
-        {{ {'game':'大会','tournament':'大会','scrimmage':'練習試合','practice':'練習','joint':'合同練習','social':'イベント'}[ev.type]||'練習' }}
+            :class="['game','tournament','scrimmage'].includes(ev.type)?'bg-indigo-100 text-indigo-700':ev.type==='social'?'bg-pink-100 text-pink-700':ev.type==='holiday'?'bg-gray-200 text-gray-500':'bg-green-100 text-green-700'">
+        {{ {'game':'大会','tournament':'大会','scrimmage':'練習試合','practice':'練習','joint':'合同練習','social':'イベント','holiday':'休み'}[ev.type]||'練習' }}
       </span>
       <div>
         <p class="text-sm font-medium">{{ ev.date }} {{ ev.time }}</p>
@@ -996,8 +997,15 @@ const EventDetail = {
   </div>
 
   <div>
+    <!-- 休みの場合はタブ不要 -->
+    <div v-if="ev.type==='holiday'" class="bg-gray-50 rounded-2xl p-6 text-center text-gray-400">
+      <p class="text-3xl mb-2">🏖️</p>
+      <p class="font-semibold text-gray-500">休みの日</p>
+      <p v-if="ev.notes" class="text-sm mt-2 text-gray-400">{{ ev.notes }}</p>
+    </div>
+
     <!-- タブ -->
-    <div class="flex mb-4 bg-gray-100 rounded-xl p-1 gap-0.5">
+    <div v-if="ev.type!=='holiday'" class="flex mb-4 bg-gray-100 rounded-xl p-1 gap-0.5">
       <button @click="tab='attendance'" :class="tab==='attendance'?'bg-white shadow text-indigo-700':'text-gray-500'"
               class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all">出欠</button>
       <button v-if="isGameType(ev.type)" @click="tab='score'" :class="tab==='score'?'bg-white shadow text-indigo-700':'text-gray-500'"
@@ -1008,6 +1016,7 @@ const EventDetail = {
               class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all">記録</button>
     </div>
 
+    <template v-if="ev.type!=='holiday'">
     <!-- ===== スコアタブ ===== -->
     <div v-if="tab==='score'">
       <!-- 結果バナー -->
@@ -1422,6 +1431,7 @@ const EventDetail = {
       </div>
     </div>
 
+    </template><!-- /v-if holiday -->
   </div>
 </div>
   `
