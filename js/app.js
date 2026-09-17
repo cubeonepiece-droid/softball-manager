@@ -700,6 +700,57 @@ const EventDetail = {
     const fpPosition = ref('');
     const useDP = ref(false);
 
+    // 複数オーダー
+    const lineups = ref([]); // [{id, name, lineup, fpMemberId, fpPosition, useDP}]
+    const activeLineupIdx = ref(0);
+    const newLineupName = ref('');
+    const renamingIdx = ref(-1);
+    const renameText = ref('');
+
+    // 助っ人
+    const guests = ref([]); // [{id, name}]
+    const newGuestName = ref('');
+
+    function makeLineupSlot(name) {
+      return { id: Date.now().toString(36) + Math.random().toString(36).slice(2), name, lineup: Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false })), fpMemberId: '', fpPosition: '', useDP: false };
+    }
+    function applyActiveLineup() {
+      const slot = lineups.value[activeLineupIdx.value];
+      if (!slot) return;
+      const saved = slot.lineup?.length ? JSON.parse(JSON.stringify(slot.lineup)).slice(0, 9) : [];
+      lineup.value    = saved.length ? saved : Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false }));
+      fpMemberId.value = slot.fpMemberId || '';
+      fpPosition.value = slot.fpPosition || '';
+      useDP.value      = slot.useDP || false;
+    }
+    function syncToActive() {
+      if (!lineups.value[activeLineupIdx.value]) return;
+      lineups.value[activeLineupIdx.value].lineup     = JSON.parse(JSON.stringify(lineup.value));
+      lineups.value[activeLineupIdx.value].fpMemberId = fpMemberId.value;
+      lineups.value[activeLineupIdx.value].fpPosition = fpPosition.value;
+      lineups.value[activeLineupIdx.value].useDP      = useDP.value;
+    }
+    function switchLineupSlot(idx) { syncToActive(); activeLineupIdx.value = idx; applyActiveLineup(); }
+    function addLineupSlot() {
+      syncToActive();
+      const name = `オーダー${lineups.value.length + 1}`;
+      lineups.value.push(makeLineupSlot(name));
+      activeLineupIdx.value = lineups.value.length - 1;
+      applyActiveLineup();
+    }
+    function deleteLineupSlot(idx) {
+      if (lineups.value.length <= 1) return;
+      if (!confirm(`「${lineups.value[idx].name}」を削除しますか？`)) return;
+      lineups.value.splice(idx, 1);
+      activeLineupIdx.value = Math.min(activeLineupIdx.value, lineups.value.length - 1);
+      applyActiveLineup();
+    }
+    function startRename(idx) { renamingIdx.value = idx; renameText.value = lineups.value[idx].name; }
+    function confirmRename() {
+      if (renameText.value.trim()) lineups.value[renamingIdx.value].name = renameText.value.trim();
+      renamingIdx.value = -1;
+    }
+
     // 出欠
     const attendance = ref([]); // [{ memberId, status }]
 
@@ -717,11 +768,17 @@ const EventDetail = {
       const len = innings.value;
       scoreUs.value   = Array.from({ length: len }, (_, i) => { const v = e.score?.us?.[i];   return v === undefined ? 0 : v; });
       scoreThem.value = Array.from({ length: len }, (_, i) => { const v = e.score?.them?.[i]; return v === undefined ? 0 : v; });
-      const savedLineup = e.lineup?.length ? JSON.parse(JSON.stringify(e.lineup)).slice(0, 9) : [];
-      lineup.value = savedLineup.length ? savedLineup : Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false }));
-      fpMemberId.value = e.fpMemberId || '';
-      fpPosition.value = e.fpPosition || '';
-      useDP.value      = e.useDP || false;
+      // lineups（複数オーダー）ロード
+      if (e.lineups?.length) {
+        lineups.value = JSON.parse(JSON.stringify(e.lineups));
+      } else {
+        const legacyLineup = e.lineup?.length ? JSON.parse(JSON.stringify(e.lineup)).slice(0, 9) : [];
+        lineups.value = [{ id: 'default', name: 'オーダー1', lineup: legacyLineup, fpMemberId: e.fpMemberId || '', fpPosition: e.fpPosition || '', useDP: e.useDP || false }];
+      }
+      activeLineupIdx.value = 0;
+      applyActiveLineup();
+      // 助っ人ロード
+      guests.value = JSON.parse(JSON.stringify(e.guests || []));
       attendance.value = JSON.parse(JSON.stringify(e.attendance || []));
       atBats.value     = JSON.parse(JSON.stringify(e.atBats     || []));
       pitcherLog.value = JSON.parse(JSON.stringify(e.pitcherLog || []));
@@ -762,15 +819,36 @@ const EventDetail = {
     }
 
     function saveLineup() {
-      const validLineup = lineup.value.filter(l => l.memberId);
-      store.updateEvent(props.eventId, { lineup: validLineup, fpMemberId: fpMemberId.value, fpPosition: fpPosition.value, useDP: useDP.value });
+      syncToActive();
+      store.updateEvent(props.eventId, {
+        lineups: JSON.parse(JSON.stringify(lineups.value)),
+        // 後方互換のため先頭スロットをlegacy fieldsにも保存
+        lineup: lineups.value[0]?.lineup?.filter(l => l.memberId) || [],
+        fpMemberId: lineups.value[0]?.fpMemberId || '',
+        fpPosition: lineups.value[0]?.fpPosition || '',
+        useDP: lineups.value[0]?.useDP || false,
+      });
       alert('オーダーを保存しました');
     }
 
     function memberName(id) {
       if (!id) return '';
+      if (id.startsWith('guest_')) return guests.value.find(g => g.id === id)?.name || '助っ人';
       const m = store.getMember(id);
       return memberShortName(m);
+    }
+    function addGuest() {
+      const name = newGuestName.value.trim();
+      if (!name) return;
+      guests.value.push({ id: 'guest_' + Date.now(), name });
+      newGuestName.value = '';
+      store.updateEvent(props.eventId, { guests: JSON.parse(JSON.stringify(guests.value)) });
+    }
+    function removeGuest(id) {
+      guests.value = guests.value.filter(g => g.id !== id);
+      lineups.value.forEach(slot => { slot.lineup = slot.lineup.map(l => l.memberId === id ? { ...l, memberId: '', position: '' } : l); });
+      lineup.value = lineup.value.map(l => l.memberId === id ? { ...l, memberId: '', position: '' } : l);
+      store.updateEvent(props.eventId, { guests: JSON.parse(JSON.stringify(guests.value)) });
     }
 
     function inningLabel(i) {
@@ -888,14 +966,8 @@ const EventDetail = {
     const FIELD_POS_LIST = FIELD_POSITIONS;
     function simPlayerName(posCode) {
       const entry = lineup.value.find(l => l.position === posCode);
-      if (entry?.memberId) {
-        const m = store.getMember(entry.memberId);
-        return m ? memberShortName(m) : '';
-      }
-      if (posCode === fpPosition.value && fpMemberId.value) {
-        const m = store.getMember(fpMemberId.value);
-        return m ? memberShortName(m) : '';
-      }
+      if (entry?.memberId) return memberName(entry.memberId);
+      if (posCode === fpPosition.value && fpMemberId.value) return memberName(fpMemberId.value);
       return '';
     }
     function simAssign(posCode, memberId) {
@@ -912,15 +984,19 @@ const EventDetail = {
       selectedPos.value = null;
     }
     const playerMembers = computed(() => store.members.filter(m => !m.type || m.type === 'player'));
+    const guestMembers  = computed(() => guests.value.map(g => ({ id: g.id, name: g.name, shortName: g.name, isGuest: true })));
+    const allPlayerMembers = computed(() => [...playerMembers.value, ...guestMembers.value]);
 
     // 出席中の選手のみ（大会・練習試合時はフィルタ）
     const attendingPlayerMembers = computed(() => {
-      if (!ev.value || !isGameType(ev.value.type)) return playerMembers.value;
+      if (!ev.value || !isGameType(ev.value.type)) return allPlayerMembers.value;
       const attendingIds = new Set(attendance.value.filter(a => a.status === 'attending').map(a => a.memberId));
       const lineupIds = new Set(lineup.value.filter(l => l.memberId).map(l => l.memberId));
+      // 助っ人は常に表示
+      guests.value.forEach(g => attendingIds.add(g.id));
       // 参加者が誰も登録されていない場合は全選手を表示
-      if (attendingIds.size === 0 && lineupIds.size === 0) return playerMembers.value;
-      return playerMembers.value.filter(m => attendingIds.has(m.id) || lineupIds.has(m.id));
+      if (attendingIds.size === guests.value.length && lineupIds.size === 0) return allPlayerMembers.value;
+      return allPlayerMembers.value.filter(m => attendingIds.has(m.id) || lineupIds.has(m.id));
     });
     const benchMembers = computed(() => {
       const assignedIds = new Set(lineup.value.filter(l => l.memberId).map(l => l.memberId));
@@ -952,7 +1028,7 @@ const EventDetail = {
       store.updateEvent(ev.value.id, { homeAway: ev.value.homeAway === 'home' ? 'away' : 'home' });
     }
 
-    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, addInning, removeInning, swapScores, swapHomeAway, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, attendingPlayerMembers, benchMembers, availableForEntry, dragFrom, onDragStart, onDragOver, onDrop, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store };
+    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, addInning, removeInning, swapScores, swapHomeAway, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, attendingPlayerMembers, benchMembers, availableForEntry, dragFrom, onDragStart, onDragOver, onDrop, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store, lineups, activeLineupIdx, switchLineupSlot, addLineupSlot, deleteLineupSlot, renamingIdx, renameText, startRename, confirmRename, guests, newGuestName, addGuest, removeGuest, guestMembers };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -1125,6 +1201,24 @@ const EventDetail = {
 
     <!-- ===== オーダータブ ===== -->
     <div v-if="tab==='lineup'">
+      <!-- オーダー切替 -->
+      <div class="flex items-center gap-1 mb-3 overflow-x-auto pb-1">
+        <template v-for="(slot, idx) in lineups" :key="slot.id">
+          <div v-if="renamingIdx===idx" class="flex items-center gap-1">
+            <input v-model="renameText" @keyup.enter="confirmRename" @blur="confirmRename"
+                   class="border rounded-lg px-2 py-1 text-xs w-24 focus:outline-none focus:ring-2 focus:ring-indigo-400" autofocus>
+          </div>
+          <button v-else @click="activeLineupIdx===idx ? startRename(idx) : switchLineupSlot(idx)"
+                  :class="activeLineupIdx===idx ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                  class="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex-shrink-0">
+            {{ slot.name }}
+            <span v-if="activeLineupIdx===idx" class="ml-1 opacity-70">✎</span>
+          </button>
+        </template>
+        <button @click="addLineupSlot" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-50 border border-dashed border-gray-300 text-gray-400 hover:bg-gray-100 flex-shrink-0">＋追加</button>
+        <button v-if="lineups.length > 1" @click="deleteLineupSlot(activeLineupIdx)" class="px-3 py-1.5 rounded-lg text-xs font-medium text-red-400 hover:bg-red-50 flex-shrink-0">削除</button>
+      </div>
+
       <!-- 出席フィルター注記 -->
       <div v-if="isGameType(ev.type)" class="bg-blue-50 rounded-xl px-3 py-2 mb-3 text-xs text-blue-600 font-medium">
         ⚾ 出欠で「参加」のメンバーのみ表示されます
@@ -1192,7 +1286,7 @@ const EventDetail = {
             <select v-model="entry.memberId"
                     class="w-full border rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
               <option value="">-</option>
-              <option v-for="m in availableForEntry(entry)" :key="m.id" :value="m.id">{{ memberShortName(m) }}({{ m.grade }}年)</option>
+              <option v-for="m in availableForEntry(entry)" :key="m.id" :value="m.id">{{ m.isGuest ? '🤝 ' + m.name : memberShortName(m) + '(' + m.grade + '年)' }}</option>
             </select>
           </div>
           <div class="col-span-4">
@@ -1228,7 +1322,7 @@ const EventDetail = {
         <div class="flex flex-wrap gap-2">
           <span v-for="m in benchMembers" :key="m.id"
                 class="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full">
-            {{ memberShortName(m) }}({{ m.grade }}年)
+            {{ m.isGuest ? '🤝 ' + m.name : memberShortName(m) + '(' + m.grade + '年)' }}
           </span>
         </div>
       </div>
@@ -1326,6 +1420,24 @@ const EventDetail = {
       <button @click="saveAttendance" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 mt-2">
         出欠を保存
       </button>
+
+      <!-- 助っ人 -->
+      <div class="bg-white rounded-2xl shadow p-4 mt-4">
+        <h3 class="text-sm font-semibold text-gray-700 mb-3">🤝 助っ人</h3>
+        <div v-if="guests.length === 0" class="text-xs text-gray-400 mb-3">助っ人はいません</div>
+        <div v-for="g in guests" :key="g.id" class="flex items-center justify-between py-2 border-b last:border-0">
+          <span class="text-sm font-medium flex items-center gap-2">
+            <span class="text-xs bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded font-semibold">助</span>
+            {{ g.name }}
+          </span>
+          <button @click="removeGuest(g.id)" class="text-xs text-red-400 hover:text-red-600 px-2 py-1">削除</button>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <input v-model="newGuestName" @keyup.enter="addGuest" placeholder="名前を入力（他チームの選手など）"
+                 class="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+          <button @click="addGuest" class="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600">追加</button>
+        </div>
+      </div>
     </div>
 
     <!-- ===== 記録タブ ===== -->
@@ -1972,7 +2084,7 @@ const LineupSim = {
         <select v-model="entry.memberId" @change="onMemberSelect(entry)"
                 class="w-full border rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
           <option value="">-</option>
-          <option v-for="m in availableForEntry(entry)" :key="m.id" :value="m.id">{{ memberShortName(m) }}({{ m.grade }}年)</option>
+          <option v-for="m in availableForEntry(entry)" :key="m.id" :value="m.id">{{ m.isGuest ? '🤝 ' + m.name : memberShortName(m) + '(' + m.grade + '年)' }}</option>
         </select>
       </div>
       <div class="col-span-4">
@@ -2009,7 +2121,7 @@ const LineupSim = {
     <div class="flex flex-wrap gap-2">
       <span v-for="m in benchMembers" :key="m.id"
             class="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full">
-        {{ memberShortName(m) }}({{ m.grade }}年)
+        {{ m.isGuest ? '🤝 ' + m.name : memberShortName(m) + '(' + m.grade + '年)' }}
       </span>
     </div>
   </div>
