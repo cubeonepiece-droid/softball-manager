@@ -708,8 +708,10 @@ const EventDetail = {
     const renameText = ref('');
 
     // 助っ人
-    const guests = ref([]); // [{id, name}]
+    const guests = ref([]); // [{id, name, grade, number}]
     const newGuestName = ref('');
+    const newGuestGrade = ref('');
+    const newGuestNumber = ref('');
 
     function makeLineupSlot(name) {
       return { id: Date.now().toString(36) + Math.random().toString(36).slice(2), name, lineup: Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false })), fpMemberId: '', fpPosition: '', useDP: false };
@@ -840,8 +842,12 @@ const EventDetail = {
     function addGuest() {
       const name = newGuestName.value.trim();
       if (!name) return;
-      guests.value.push({ id: 'guest_' + Date.now(), name });
+      const grade = newGuestGrade.value ? Number(newGuestGrade.value) : null;
+      const number = newGuestNumber.value.trim() || '';
+      guests.value.push({ id: 'guest_' + Date.now(), name, grade, number });
       newGuestName.value = '';
+      newGuestGrade.value = '';
+      newGuestNumber.value = '';
       store.updateEvent(props.eventId, { guests: JSON.parse(JSON.stringify(guests.value)) });
     }
     function removeGuest(id) {
@@ -984,7 +990,7 @@ const EventDetail = {
       selectedPos.value = null;
     }
     const playerMembers = computed(() => store.members.filter(m => !m.type || m.type === 'player'));
-    const guestMembers  = computed(() => guests.value.map(g => ({ id: g.id, name: g.name, shortName: g.name, isGuest: true })));
+    const guestMembers  = computed(() => guests.value.map(g => ({ id: g.id, name: g.name, shortName: g.name, grade: g.grade || null, number: g.number || '', isGuest: true })));
     const allPlayerMembers = computed(() => [...playerMembers.value, ...guestMembers.value]);
 
     // 出席中の選手のみ（大会・練習試合時はフィルタ）
@@ -1028,7 +1034,7 @@ const EventDetail = {
       store.updateEvent(ev.value.id, { homeAway: ev.value.homeAway === 'home' ? 'away' : 'home' });
     }
 
-    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, addInning, removeInning, swapScores, swapHomeAway, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, attendingPlayerMembers, benchMembers, availableForEntry, dragFrom, onDragStart, onDragOver, onDrop, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store, lineups, activeLineupIdx, switchLineupSlot, addLineupSlot, deleteLineupSlot, renamingIdx, renameText, startRename, confirmRename, guests, newGuestName, addGuest, removeGuest, guestMembers };
+    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, addInning, removeInning, swapScores, swapHomeAway, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, attendingPlayerMembers, benchMembers, availableForEntry, dragFrom, onDragStart, onDragOver, onDrop, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store, lineups, activeLineupIdx, switchLineupSlot, addLineupSlot, deleteLineupSlot, renamingIdx, renameText, startRename, confirmRename, guests, newGuestName, newGuestGrade, newGuestNumber, addGuest, removeGuest, guestMembers };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -1286,7 +1292,7 @@ const EventDetail = {
             <select v-model="entry.memberId"
                     class="w-full border rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
               <option value="">-</option>
-              <option v-for="m in availableForEntry(entry)" :key="m.id" :value="m.id">{{ m.isGuest ? '🤝 ' + m.name : memberShortName(m) + '(' + m.grade + '年)' }}</option>
+              <option v-for="m in availableForEntry(entry)" :key="m.id" :value="m.id">{{ m.isGuest ? '🤝 ' + m.name + (m.grade || m.number ? '(' + (m.grade ? m.grade + '年' : '') + (m.number ? ' #' + m.number : '') + ')' : '') : memberShortName(m) + '(' + m.grade + '年' + (m.number ? ' #' + m.number : '') + ')' }}</option>
             </select>
           </div>
           <div class="col-span-4">
@@ -1322,7 +1328,7 @@ const EventDetail = {
         <div class="flex flex-wrap gap-2">
           <span v-for="m in benchMembers" :key="m.id"
                 class="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full">
-            {{ m.isGuest ? '🤝 ' + m.name : memberShortName(m) + '(' + m.grade + '年)' }}
+            {{ m.isGuest ? '🤝 ' + m.name + (m.grade || m.number ? '(' + (m.grade ? m.grade + '年' : '') + (m.number ? ' #' + m.number : '') + ')' : '') : memberShortName(m) + '(' + m.grade + '年' + (m.number ? ' #' + m.number : '') + ')' }}
           </span>
         </div>
       </div>
@@ -1429,13 +1435,22 @@ const EventDetail = {
           <span class="text-sm font-medium flex items-center gap-2">
             <span class="text-xs bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded font-semibold">助</span>
             {{ g.name }}
+            <span v-if="g.grade || g.number" class="text-xs text-gray-400">({{ g.grade ? g.grade + '年' : '' }}{{ g.number ? ' #' + g.number : '' }})</span>
           </span>
           <button @click="removeGuest(g.id)" class="text-xs text-red-400 hover:text-red-600 px-2 py-1">削除</button>
         </div>
-        <div class="flex gap-2 mt-3">
-          <input v-model="newGuestName" @keyup.enter="addGuest" placeholder="名前を入力（他チームの選手など）"
-                 class="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
-          <button @click="addGuest" class="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600">追加</button>
+        <div class="mt-3 space-y-2">
+          <input v-model="newGuestName" placeholder="名前（必須）"
+                 class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+          <div class="flex gap-2">
+            <select v-model="newGuestGrade" class="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+              <option value="">学年（任意）</option>
+              <option v-for="g in [1,2,3,4,5,6]" :key="g" :value="g">{{ g }}年生</option>
+            </select>
+            <input v-model="newGuestNumber" placeholder="#番号" maxlength="3"
+                   class="w-24 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+            <button @click="addGuest" class="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600">追加</button>
+          </div>
         </div>
       </div>
     </div>
@@ -2084,7 +2099,7 @@ const LineupSim = {
         <select v-model="entry.memberId" @change="onMemberSelect(entry)"
                 class="w-full border rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
           <option value="">-</option>
-          <option v-for="m in availableForEntry(entry)" :key="m.id" :value="m.id">{{ m.isGuest ? '🤝 ' + m.name : memberShortName(m) + '(' + m.grade + '年)' }}</option>
+          <option v-for="m in availableForEntry(entry)" :key="m.id" :value="m.id">{{ m.isGuest ? '🤝 ' + m.name + (m.grade || m.number ? '(' + (m.grade ? m.grade + '年' : '') + (m.number ? ' #' + m.number : '') + ')' : '') : memberShortName(m) + '(' + m.grade + '年' + (m.number ? ' #' + m.number : '') + ')' }}</option>
         </select>
       </div>
       <div class="col-span-4">
@@ -2121,7 +2136,7 @@ const LineupSim = {
     <div class="flex flex-wrap gap-2">
       <span v-for="m in benchMembers" :key="m.id"
             class="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full">
-        {{ m.isGuest ? '🤝 ' + m.name : memberShortName(m) + '(' + m.grade + '年)' }}
+        {{ m.isGuest ? '🤝 ' + m.name + (m.grade || m.number ? '(' + (m.grade ? m.grade + '年' : '') + (m.number ? ' #' + m.number : '') + ')' : '') : memberShortName(m) + '(' + m.grade + '年' + (m.number ? ' #' + m.number : '') + ')' }}
       </span>
     </div>
   </div>
