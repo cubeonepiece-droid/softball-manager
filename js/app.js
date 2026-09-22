@@ -764,6 +764,18 @@ const EventDetail = {
     const pitcherModal = ref(false);
     const pitcherInningEdit = ref({ memberId: '', fromInning: 1, toInning: 1 });
 
+    // 相手チームの打席記録
+    const opponentAtBats = ref([]); // [{ id, inning, order, result }]
+    const oppAbModal = ref(null);   // { inning, order } — 入力中
+    const recordSubTab = ref('us'); // 'us' | 'opp'
+
+    // 試合タイマー
+    const gameStartTime = ref(''); // 'HH:MM'
+    const timerRunning  = ref(false);
+    const timerElapsed  = ref(0);  // 秒
+    let   timerInterval = null;
+    const TIMER_LIMIT   = 50 * 60; // 50分
+
     function initFromEvent() {
       if (!ev.value) return;
       const e = ev.value;
@@ -783,8 +795,11 @@ const EventDetail = {
       // 助っ人ロード
       guests.value = JSON.parse(JSON.stringify(e.guests || []));
       attendance.value = JSON.parse(JSON.stringify(e.attendance || []));
-      atBats.value     = JSON.parse(JSON.stringify(e.atBats     || []));
-      pitcherLog.value = JSON.parse(JSON.stringify(e.pitcherLog || []));
+      atBats.value          = JSON.parse(JSON.stringify(e.atBats          || []));
+      pitcherLog.value      = JSON.parse(JSON.stringify(e.pitcherLog      || []));
+      opponentAtBats.value  = JSON.parse(JSON.stringify(e.opponentAtBats  || []));
+      gameStartTime.value   = e.gameStartTime || '';
+      timerElapsed.value    = e.timerElapsed  || 0;
       tab.value = isGameType(e.type) ? 'score' : 'attendance';
     }
 
@@ -861,6 +876,67 @@ const EventDetail = {
 
     function inningLabel(i) {
       return `${i+1}回`;
+    }
+
+    // ── タイマー ──
+    const timerDisplay = computed(() => {
+      const t = timerElapsed.value;
+      const m = Math.floor(t / 60).toString().padStart(2, '0');
+      const s = (t % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    });
+    const timerOver50 = computed(() => timerElapsed.value >= TIMER_LIMIT);
+    const timerOver45 = computed(() => timerElapsed.value >= 45 * 60);
+
+    function startTimer() {
+      if (timerRunning.value) return;
+      if (!gameStartTime.value) {
+        const now = new Date();
+        gameStartTime.value = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+      }
+      timerRunning.value = true;
+      timerInterval = setInterval(() => { timerElapsed.value++; }, 1000);
+    }
+    function pauseTimer() {
+      timerRunning.value = false;
+      clearInterval(timerInterval);
+    }
+    function resetTimer() {
+      if (!confirm('タイマーをリセットしますか？')) return;
+      pauseTimer();
+      timerElapsed.value = 0;
+      gameStartTime.value = '';
+    }
+
+    // ── 相手チーム打席 ──
+    function oppAbKey(inning, order) { return `${inning}-${order}`; }
+    function getOppAb(inning, order) {
+      return opponentAtBats.value.find(a => a.inning === inning && a.order === order);
+    }
+    function openOppAbModal(inning, order) {
+      oppAbModal.value = { inning, order };
+    }
+    function setOppAbResult(code) {
+      if (!oppAbModal.value) return;
+      const { inning, order } = oppAbModal.value;
+      const idx = opponentAtBats.value.findIndex(a => a.inning === inning && a.order === order);
+      if (code === null) {
+        if (idx !== -1) opponentAtBats.value.splice(idx, 1);
+      } else {
+        const id = `opp_${inning}_${order}`;
+        if (idx !== -1) opponentAtBats.value[idx].result = code;
+        else opponentAtBats.value.push({ id, inning, order, result: code });
+      }
+      oppAbModal.value = null;
+    }
+    // 相手チームの1イニング中の打者リスト (1〜9でロールオーバー)
+    function oppInningOrders(inning) {
+      return Array.from({ length: 9 }, (_, i) => i + 1);
+    }
+    // 相手の各イニングごとのアウト数（G/K/FO/SAC/DPをアウトとしてカウント）
+    const OUT_RESULTS = ['K', 'KL', 'GO', 'FO', 'LO', 'SAC', 'DP', 'SF'];
+    function oppInningOuts(inning) {
+      return opponentAtBats.value.filter(a => a.inning === inning && OUT_RESULTS.includes(a.result)).length;
     }
 
     function setDP(order) {
@@ -978,7 +1054,13 @@ const EventDetail = {
       openAbModal(memberId, Math.min(next, innings.value));
     }
     function saveRecord() {
-      store.updateEvent(props.eventId, { atBats: [...atBats.value], pitcherLog: [...pitcherLog.value] });
+      store.updateEvent(props.eventId, {
+        atBats:         [...atBats.value],
+        pitcherLog:     [...pitcherLog.value],
+        opponentAtBats: JSON.parse(JSON.stringify(opponentAtBats.value)),
+        gameStartTime:  gameStartTime.value,
+        timerElapsed:   timerElapsed.value,
+      });
       alert('記録を保存しました');
     }
     function addPitcher() {
@@ -1063,7 +1145,9 @@ const EventDetail = {
       store.updateEvent(ev.value.id, { homeAway: ev.value.homeAway === 'home' ? 'away' : 'home' });
     }
 
-    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, addInning, removeInning, swapScores, swapHomeAway, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, attendingPlayerMembers, benchMembers, availableForEntry, dragFrom, onDragStart, onDragOver, onDrop, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store, lineups, activeLineupIdx, switchLineupSlot, addLineupSlot, deleteLineupSlot, renamingIdx, renameText, startRename, confirmRename, guests, newGuestName, newGuestGrade, newGuestNumber, addGuest, removeGuest, guestMembers, isSubstituted, canReEnter, doReEntry, clearReEntry };
+    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, addInning, removeInning, swapScores, swapHomeAway, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, attendingPlayerMembers, benchMembers, availableForEntry, dragFrom, onDragStart, onDragOver, onDrop, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store, lineups, activeLineupIdx, switchLineupSlot, addLineupSlot, deleteLineupSlot, renamingIdx, renameText, startRename, confirmRename, guests, newGuestName, newGuestGrade, newGuestNumber, addGuest, removeGuest, guestMembers, isSubstituted, canReEnter, doReEntry, clearReEntry,
+      opponentAtBats, oppAbModal, recordSubTab, openOppAbModal, setOppAbResult, getOppAb, oppInningOrders, oppInningOuts, OUT_RESULTS,
+      gameStartTime, timerRunning, timerElapsed, timerDisplay, timerOver50, timerOver45, startTimer, pauseTimer, resetTimer };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -1135,6 +1219,33 @@ const EventDetail = {
            :class="ev.result==='win'?'bg-green-100 text-green-700':ev.result==='lose'?'bg-red-100 text-red-500':'bg-gray-100 text-gray-600'">
         {{ ev.result==='win'?'勝利 🎉':ev.result==='lose'?'敗戦':'引き分け' }}
         &nbsp;{{ totalUs }} - {{ totalThem }}
+      </div>
+
+      <!-- 試合タイマー -->
+      <div class="bg-white rounded-xl shadow p-3 mb-3">
+        <div class="flex items-center gap-3">
+          <div class="flex-1">
+            <div :class="[timerOver50 ? 'text-red-600 animate-pulse' : timerOver45 ? 'text-orange-500' : 'text-gray-800', 'text-2xl font-mono font-bold tabular-nums']">
+              {{ timerDisplay }}
+              <span class="text-xs font-normal ml-1 opacity-60">/ 50:00</span>
+            </div>
+            <div class="flex items-center gap-2 mt-1">
+              <label class="text-xs text-gray-400">開始</label>
+              <input v-model="gameStartTime" type="time"
+                     class="text-xs border rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 text-gray-700">
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button v-if="!timerRunning" @click="startTimer"
+                    class="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-semibold hover:bg-green-600">▶ 開始</button>
+            <button v-else @click="pauseTimer"
+                    class="px-4 py-2 bg-yellow-500 text-white rounded-lg text-sm font-semibold hover:bg-yellow-600">⏸ 停止</button>
+            <button @click="resetTimer"
+                    class="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-500 hover:bg-gray-50">↺</button>
+          </div>
+        </div>
+        <div v-if="timerOver50" class="mt-2 text-xs text-red-600 font-semibold text-center">⚠️ 50分経過しました</div>
+        <div v-else-if="timerOver45" class="mt-2 text-xs text-orange-500 font-semibold text-center">残り約5分</div>
       </div>
 
       <!-- 先攻/後攻 スワップ -->
@@ -1504,6 +1615,80 @@ const EventDetail = {
 
     <!-- ===== 記録タブ ===== -->
     <div v-if="tab==='record'">
+      <!-- サブタブ -->
+      <div class="flex bg-gray-100 rounded-xl p-1 mb-4 gap-1">
+        <button @click="recordSubTab='us'" :class="recordSubTab==='us'?'bg-white shadow text-indigo-700':'text-gray-500'"
+                class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all">自チーム</button>
+        <button @click="recordSubTab='opp'" :class="recordSubTab==='opp'?'bg-white shadow text-indigo-700':'text-gray-500'"
+                class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all">相手チーム</button>
+      </div>
+
+      <!-- 相手チームの打席記録 -->
+      <div v-if="recordSubTab==='opp'">
+        <div class="bg-white rounded-2xl shadow mb-4 overflow-hidden">
+          <div class="bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-500 flex items-center justify-between">
+            <span>相手チーム打席記録</span>
+            <span class="text-xs text-gray-400">各マスをタップして記録</span>
+          </div>
+          <!-- イニング別グリッド -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="bg-gray-50 border-b">
+                  <th class="py-2 px-2 text-left text-gray-500 w-10">打順</th>
+                  <th v-for="i in inningNums" :key="i" class="py-2 px-1 text-center text-gray-500 w-12">{{ i }}回</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="order in 9" :key="order" class="border-b last:border-0">
+                  <td class="py-2 px-2 font-bold text-indigo-600 text-center">{{ order }}</td>
+                  <td v-for="i in inningNums" :key="i" class="py-1 px-1 text-center">
+                    <button @click="openOppAbModal(i, order)"
+                            :class="getOppAb(i, order) ? abResultColor(getOppAb(i, order).result) : 'bg-gray-50 text-gray-300 hover:bg-gray-100'"
+                            class="w-10 h-8 rounded-lg text-xs font-bold border border-gray-100">
+                      {{ getOppAb(i, order) ? getOppAb(i, order).result : '+' }}
+                    </button>
+                  </td>
+                </tr>
+                <!-- アウト合計行 -->
+                <tr class="bg-gray-50">
+                  <td class="py-1.5 px-2 text-xs text-gray-400 font-semibold">OUT</td>
+                  <td v-for="i in inningNums" :key="i" class="py-1.5 px-1 text-center">
+                    <span :class="oppInningOuts(i)>=3 ? 'text-red-600 font-bold' : 'text-gray-500'" class="text-xs">{{ oppInningOuts(i) }}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <button @click="saveRecord" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 mb-4">
+          記録を保存
+        </button>
+
+        <!-- 相手打席入力モーダル -->
+        <div v-if="oppAbModal" class="fixed inset-x-4 bottom-20 bg-white rounded-2xl shadow-2xl border p-4 z-50">
+          <p class="text-sm font-bold mb-3 text-gray-700">
+            {{ oppAbModal.inning }}回 — {{ oppAbModal.order }}番打者
+          </p>
+          <div class="grid grid-cols-4 gap-2 mb-3">
+            <button v-for="r in AT_BAT_RESULTS" :key="r.code"
+                    @click="setOppAbResult(r.code)"
+                    :class="abResultColor(r.code)"
+                    class="py-2 rounded-lg text-xs font-bold flex flex-col items-center gap-0.5">
+              <span class="font-bold">{{ r.label }}</span>
+              <span class="text-xs opacity-70">{{ r.sub }}</span>
+            </button>
+          </div>
+          <div class="flex gap-2">
+            <button @click="setOppAbResult(null)" class="flex-1 py-2 border rounded-lg text-sm text-red-400 hover:bg-red-50">削除</button>
+            <button @click="oppAbModal=null" class="flex-1 py-2 border rounded-lg text-sm text-gray-500 hover:bg-gray-50">キャンセル</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 自チーム記録 -->
+      <div v-if="recordSubTab==='us'">
       <!-- 投手記録 -->
       <div class="bg-white rounded-2xl shadow mb-4 overflow-hidden">
         <div class="bg-gray-50 px-4 py-2 flex items-center justify-between">
@@ -1603,6 +1788,7 @@ const EventDetail = {
           <button @click="savePitcher" class="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold">登録</button>
         </div>
       </div>
+      </div><!-- /recordSubTab us -->
     </div>
 
     </template><!-- /v-if holiday -->
