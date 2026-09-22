@@ -714,13 +714,14 @@ const EventDetail = {
     const newGuestNumber = ref('');
 
     function makeLineupSlot(name) {
-      return { id: Date.now().toString(36) + Math.random().toString(36).slice(2), name, lineup: Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false })), fpMemberId: '', fpPosition: '', useDP: false };
+      return { id: Date.now().toString(36) + Math.random().toString(36).slice(2), name, lineup: Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false, starterId: '', reEntryUsed: false })), fpMemberId: '', fpPosition: '', useDP: false };
     }
     function applyActiveLineup() {
       const slot = lineups.value[activeLineupIdx.value];
       if (!slot) return;
       const saved = slot.lineup?.length ? JSON.parse(JSON.stringify(slot.lineup)).slice(0, 9) : [];
-      lineup.value    = saved.length ? saved : Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false }));
+      const base = saved.length ? saved : Array.from({ length: 9 }, (_, i) => ({ order: i+1, memberId: '', position: '', isDP: false, starterId: '', reEntryUsed: false }));
+      lineup.value = base.map(e => ({ starterId: '', reEntryUsed: false, ...e }));
       fpMemberId.value = slot.fpMemberId || '';
       fpPosition.value = slot.fpPosition || '';
       useDP.value      = slot.useDP || false;
@@ -821,6 +822,7 @@ const EventDetail = {
     }
 
     function saveLineup() {
+      lockStarters();
       syncToActive();
       store.updateEvent(props.eventId, {
         lineups: JSON.parse(JSON.stringify(lineups.value)),
@@ -866,6 +868,33 @@ const EventDetail = {
     }
 
     const dpOrder = computed(() => lineup.value.find(l => l.isDP)?.order);
+
+    // リエントリー
+    function lockStarters() {
+      lineup.value.forEach(e => { if (e.memberId && !e.starterId) e.starterId = e.memberId; });
+    }
+    function doSubstitute(entry, newMemberId) {
+      if (!entry.starterId && entry.memberId) entry.starterId = entry.memberId;
+      entry.memberId = newMemberId;
+    }
+    function doReEntry(entry) {
+      if (!entry.starterId || entry.reEntryUsed) return;
+      if (!confirm(`「${memberName(entry.starterId)}」を再出場させますか？\n現在の選手「${memberName(entry.memberId)}」は退場します。`)) return;
+      entry.memberId = entry.starterId;
+      entry.reEntryUsed = true;
+    }
+    function clearReEntry(entry) {
+      entry.starterId = '';
+      entry.reEntryUsed = false;
+    }
+    // 先発から交代している（かつ先発が存在）か
+    function isSubstituted(entry) {
+      return !!(entry.starterId && entry.starterId !== entry.memberId);
+    }
+    // 再出場可能か
+    function canReEnter(entry) {
+      return isSubstituted(entry) && !entry.reEntryUsed;
+    }
 
     const sortedMembers = computed(() => [...store.members].filter(m => !m.type || m.type === 'player').sort((a, b) => {
       const capA = a.captain ? 0 : a.viceCaptain ? 1 : 2;
@@ -1034,7 +1063,7 @@ const EventDetail = {
       store.updateEvent(ev.value.id, { homeAway: ev.value.homeAway === 'home' ? 'away' : 'home' });
     }
 
-    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, addInning, removeInning, swapScores, swapHomeAway, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, attendingPlayerMembers, benchMembers, availableForEntry, dragFrom, onDragStart, onDragOver, onDrop, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store, lineups, activeLineupIdx, switchLineupSlot, addLineupSlot, deleteLineupSlot, renamingIdx, renameText, startRename, confirmRename, guests, newGuestName, newGuestGrade, newGuestNumber, addGuest, removeGuest, guestMembers };
+    return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, addInning, removeInning, swapScores, swapHomeAway, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, attendingPlayerMembers, benchMembers, availableForEntry, dragFrom, onDragStart, onDragOver, onDrop, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store, lineups, activeLineupIdx, switchLineupSlot, addLineupSlot, deleteLineupSlot, renamingIdx, renameText, startRename, confirmRename, guests, newGuestName, newGuestGrade, newGuestNumber, addGuest, removeGuest, guestMembers, isSubstituted, canReEnter, doReEntry, clearReEntry };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -1283,27 +1312,45 @@ const EventDetail = {
              @dragstart="onDragStart(idx)"
              @dragover="onDragOver"
              @drop="onDrop(idx)"
-             :class="dragFrom===idx ? 'opacity-40' : ''"
-             class="grid gap-1 items-center px-2 py-2 border-b last:border-0 transition-opacity"
-             :style="useDP ? 'grid-template-columns:repeat(12,minmax(0,1fr))' : 'grid-template-columns:repeat(11,minmax(0,1fr))'">
-          <div class="col-span-1 text-center text-gray-400 cursor-grab active:cursor-grabbing text-base select-none">⠿</div>
-          <div class="col-span-1 text-sm font-bold text-indigo-600">{{ entry.order }}</div>
-          <div class="col-span-4">
-            <select v-model="entry.memberId"
-                    class="w-full border rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
-              <option value="">-</option>
-              <option v-for="m in availableForEntry(entry)" :key="m.id" :value="m.id">{{ m.isGuest ? '🤝 ' + m.name + (m.grade || m.number ? '(' + (m.grade ? m.grade + '年' : '') + (m.number ? ' #' + m.number : '') + ')' : '') : memberShortName(m) + '(' + m.grade + '年' + (m.number ? ' #' + m.number : '') + ')' }}</option>
-            </select>
+             :class="[dragFrom===idx ? 'opacity-40' : '', isSubstituted(entry) ? 'bg-blue-50' : '']"
+             class="border-b last:border-0 transition-opacity">
+          <!-- 先発/交代ステータス行 -->
+          <div v-if="entry.starterId" class="flex items-center gap-1 px-2 pt-1.5">
+            <span class="text-xs text-gray-400">先発:</span>
+            <span class="text-xs font-medium text-gray-600">{{ memberName(entry.starterId) }}</span>
+            <span v-if="isSubstituted(entry) && !entry.reEntryUsed"
+                  class="ml-auto flex items-center gap-1">
+              <span class="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-semibold">交代中</span>
+              <button @click="doReEntry(entry)"
+                      class="text-xs bg-green-500 text-white px-2 py-0.5 rounded hover:bg-green-600 font-semibold">RE</button>
+            </span>
+            <span v-else-if="entry.reEntryUsed"
+                  class="ml-auto text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded font-semibold">RE済</span>
+            <button v-if="entry.starterId" @click="clearReEntry(entry)"
+                    class="ml-1 text-xs text-gray-300 hover:text-gray-500">✕</button>
           </div>
-          <div class="col-span-4">
-            <select v-model="entry.position"
-                    class="w-full border rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
-              <option value="">-</option>
-              <option v-for="p in POSITIONS" :key="p.code" :value="p.code">{{ p.label }}</option>
-            </select>
-          </div>
-          <div v-if="useDP" class="col-span-2 flex justify-center">
-            <input type="radio" name="dp_ev" :checked="entry.isDP" @change="setDP(entry.order)" class="accent-indigo-600 w-4 h-4">
+          <!-- 打順行 -->
+          <div class="grid gap-1 items-center px-2 py-1.5"
+               :style="useDP ? 'grid-template-columns:repeat(12,minmax(0,1fr))' : 'grid-template-columns:repeat(11,minmax(0,1fr))'">
+            <div class="col-span-1 text-center text-gray-400 cursor-grab active:cursor-grabbing text-base select-none">⠿</div>
+            <div class="col-span-1 text-sm font-bold text-indigo-600">{{ entry.order }}</div>
+            <div class="col-span-4">
+              <select v-model="entry.memberId"
+                      class="w-full border rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
+                <option value="">-</option>
+                <option v-for="m in availableForEntry(entry)" :key="m.id" :value="m.id">{{ m.isGuest ? '🤝 ' + m.name + (m.grade || m.number ? '(' + (m.grade ? m.grade + '年' : '') + (m.number ? ' #' + m.number : '') + ')' : '') : memberShortName(m) + '(' + m.grade + '年' + (m.number ? ' #' + m.number : '') + ')' }}</option>
+              </select>
+            </div>
+            <div class="col-span-4">
+              <select v-model="entry.position"
+                      class="w-full border rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
+                <option value="">-</option>
+                <option v-for="p in POSITIONS" :key="p.code" :value="p.code">{{ p.label }}</option>
+              </select>
+            </div>
+            <div v-if="useDP" class="col-span-2 flex justify-center">
+              <input type="radio" name="dp_ev" :checked="entry.isDP" @change="setDP(entry.order)" class="accent-indigo-600 w-4 h-4">
+            </div>
           </div>
         </div>
         <!-- FP -->
