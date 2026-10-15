@@ -20,6 +20,7 @@ window.store = Vue.reactive({
   teamName: 'チーム名',
   members: [],
   events: [],
+  groundReservations: [],
   _ready: false,
 
   init() {
@@ -38,6 +39,11 @@ window.store = Vue.reactive({
     db.collection('events').onSnapshot(snap => {
       this.events = snap.docs.map(d => ({ ...d.data(), id: d.id }));
     }, err => console.error('events sync error', err));
+
+    // グラウンド予約をリアルタイム同期
+    db.collection('grounds').onSnapshot(snap => {
+      this.groundReservations = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+    }, err => console.error('grounds sync error', err));
   },
 
   save() {
@@ -93,6 +99,19 @@ window.store = Vue.reactive({
     db.collection('events').doc(id).delete();
   },
   getEvent(id) { return this.events.find(e => e.id === id); },
+
+  // ── グラウンド予約 ────────────────────────────
+  addGround(data) {
+    const id = generateId();
+    db.collection('grounds').doc(id).set({ ...data, id });
+    return id;
+  },
+  updateGround(id, data) {
+    db.collection('grounds').doc(id).update(data);
+  },
+  deleteGround(id) {
+    db.collection('grounds').doc(id).delete();
+  },
 
   // ── 成績計算 ────────────────────────────────
   get gameEvents() { return this.events.filter(e => ['game','tournament','scrimmage'].includes(e.type)); },

@@ -2047,6 +2047,274 @@ const Stats = {
   }
 };
 
+// ── グラウンド予約管理 ──────────────────────────
+const GROUND_USAGE = [
+  { code: 'practice',  label: '練習',     color: 'green'  },
+  { code: 'game',      label: '試合',     color: 'indigo' },
+  { code: 'reserved',  label: '確保',     color: 'blue'   },
+  { code: 'other',     label: 'その他',   color: 'gray'   },
+];
+const GROUND_STATUS = [
+  { code: 'confirmed', label: '確定',   color: 'green'  },
+  { code: 'pending',   label: '申請中', color: 'yellow' },
+  { code: 'cancelled', label: 'キャンセル', color: 'red' },
+];
+
+const GroundSchedule = {
+  setup() {
+    const today = new Date();
+    const calYear  = ref(today.getFullYear());
+    const calMonth = ref(today.getMonth()); // 0-indexed
+    const modal    = ref(false);
+    const editing  = ref(null);
+    const viewMode = ref('calendar'); // 'calendar' | 'list'
+
+    const form = Vue.reactive({
+      date: '', timeStart: '', timeEnd: '',
+      groundName: '', usage: 'practice', status: 'confirmed', notes: '',
+    });
+
+    function resetForm() {
+      Object.assign(form, { date: '', timeStart: '', timeEnd: '', groundName: '', usage: 'practice', status: 'confirmed', notes: '' });
+    }
+
+    function dateStr(d) {
+      return `${calYear.value}-${String(calMonth.value + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    }
+
+    const calDays = computed(() => {
+      const first = new Date(calYear.value, calMonth.value, 1).getDay();
+      const last  = new Date(calYear.value, calMonth.value + 1, 0).getDate();
+      const days  = [];
+      for (let i = 0; i < first; i++) days.push(null);
+      for (let d = 1; d <= last; d++) days.push(d);
+      return days;
+    });
+
+    function reservationsOnDay(d) {
+      return store.groundReservations
+        .filter(r => r.date === dateStr(d))
+        .sort((a, b) => (a.timeStart || '') < (b.timeStart || '') ? -1 : 1);
+    }
+
+    const monthReservations = computed(() =>
+      [...store.groundReservations]
+        .filter(r => {
+          const [y, m] = (r.date || '').split('-').map(Number);
+          return y === calYear.value && m === calMonth.value + 1;
+        })
+        .sort((a, b) => (a.date + (a.timeStart || '')) < (b.date + (b.timeStart || '')) ? -1 : 1)
+    );
+
+    // 年/月をまたぐリスト表示用 (今後3ヶ月)
+    const upcomingReservations = computed(() => {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      return [...store.groundReservations]
+        .filter(r => r.date >= todayStr)
+        .sort((a, b) => (a.date + (a.timeStart || '')) < (b.date + (b.timeStart || '')) ? -1 : 1);
+    });
+
+    function prevMonth() {
+      if (calMonth.value === 0) { calYear.value--; calMonth.value = 11; }
+      else calMonth.value--;
+    }
+    function nextMonth() {
+      if (calMonth.value === 11) { calYear.value++; calMonth.value = 0; }
+      else calMonth.value++;
+    }
+    function isToday(d) { return dateStr(d) === today.toISOString().slice(0,10); }
+
+    function openAdd(date = '') {
+      editing.value = null;
+      resetForm();
+      form.date = date;
+      modal.value = true;
+    }
+    function openEdit(r) {
+      editing.value = r.id;
+      Object.assign(form, { date: r.date, timeStart: r.timeStart || '', timeEnd: r.timeEnd || '', groundName: r.groundName || '', usage: r.usage || 'practice', status: r.status || 'confirmed', notes: r.notes || '' });
+      modal.value = true;
+    }
+    function save() {
+      if (!form.date) return alert('日付を選択してください');
+      const data = { date: form.date, timeStart: form.timeStart, timeEnd: form.timeEnd, groundName: form.groundName.trim(), usage: form.usage, status: form.status, notes: form.notes.trim() };
+      if (editing.value) { store.updateGround(editing.value, data); modal.value = false; }
+      else { store.addGround(data); modal.value = false; }
+    }
+    function del(r) {
+      if (confirm(`「${r.date} ${r.groundName || 'グラウンド'}」の予約を削除しますか？`)) store.deleteGround(r.id);
+    }
+
+    function usageLabel(code)  { return GROUND_USAGE.find(u => u.code === code)?.label  || code; }
+    function statusLabel(code) { return GROUND_STATUS.find(s => s.code === code)?.label || code; }
+    function usageColor(code)  {
+      const u = GROUND_USAGE.find(u => u.code === code);
+      return u ? `bg-${u.color}-100 text-${u.color}-700` : 'bg-gray-100 text-gray-600';
+    }
+    function statusColor(code) {
+      const s = GROUND_STATUS.find(s => s.code === code);
+      return s ? `bg-${s.color}-100 text-${s.color}-700` : 'bg-gray-100 text-gray-600';
+    }
+
+    return { calYear, calMonth, calDays, modal, form, editing, viewMode,
+      monthReservations, upcomingReservations, reservationsOnDay,
+      prevMonth, nextMonth, isToday, openAdd, openEdit, save, del,
+      GROUND_USAGE, GROUND_STATUS, usageLabel, statusLabel, usageColor, statusColor,
+      navigate, store };
+  },
+  template: `
+<div class="max-w-2xl mx-auto px-4 py-6">
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-xl font-bold text-gray-800">⛳ グラウンド管理</h1>
+    <div class="flex gap-2">
+      <button @click="viewMode = viewMode==='calendar'?'list':'calendar'"
+              class="text-xs border rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-50">
+        {{ viewMode==='calendar' ? '📋 リスト' : '📅 カレンダー' }}
+      </button>
+      <button @click="openAdd()"
+              class="text-xs bg-green-600 text-white rounded-lg px-3 py-1.5 font-semibold hover:bg-green-700">＋ 追加</button>
+    </div>
+  </div>
+
+  <!-- カレンダービュー -->
+  <div v-if="viewMode==='calendar'">
+    <div class="flex items-center justify-between mb-3">
+      <button @click="prevMonth" class="w-8 h-8 rounded-full bg-white shadow text-gray-600 hover:bg-gray-100 flex items-center justify-center">◀</button>
+      <span class="font-semibold text-gray-700">{{ calYear }}年 {{ calMonth + 1 }}月</span>
+      <button @click="nextMonth" class="w-8 h-8 rounded-full bg-white shadow text-gray-600 hover:bg-gray-100 flex items-center justify-center">▶</button>
+    </div>
+    <div class="bg-white rounded-2xl shadow overflow-hidden mb-4">
+      <div class="grid grid-cols-7 bg-gray-50 border-b">
+        <div v-for="d in ['日','月','火','水','木','金','土']" :key="d"
+             class="py-2 text-center text-xs font-semibold text-gray-400">{{ d }}</div>
+      </div>
+      <div class="grid grid-cols-7">
+        <div v-for="(day, idx) in calDays" :key="idx"
+             :class="[day ? 'cursor-pointer hover:bg-indigo-50' : '', isToday(day) && day ? 'bg-indigo-50' : '']"
+             class="min-h-14 border-b border-r border-gray-100 p-1"
+             @click="day && openAdd(\`\${calYear}-\${String(calMonth+1).padStart(2,'0')}-\${String(day).padStart(2,'0')}\`)">
+          <span v-if="day"
+                :class="isToday(day) ? 'bg-indigo-600 text-white w-6 h-6 rounded-full flex items-center justify-center font-bold' : 'text-gray-700'"
+                class="text-xs block w-6 h-6 flex items-center justify-center">{{ day }}</span>
+          <div v-for="r in reservationsOnDay(day)" :key="r.id"
+               @click.stop="openEdit(r)"
+               :class="usageColor(r.usage)"
+               class="text-xs rounded px-1 py-0.5 mt-0.5 truncate leading-tight cursor-pointer">
+            {{ r.timeStart ? r.timeStart.slice(0,5) : '' }} {{ r.groundName || usageLabel(r.usage) }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- リストビュー -->
+  <div v-if="viewMode==='list'">
+    <div v-if="upcomingReservations.length===0" class="text-center text-gray-400 py-10">予約はありません</div>
+    <div v-for="r in upcomingReservations" :key="r.id"
+         class="bg-white rounded-xl shadow mb-2 px-4 py-3 flex items-start gap-3 cursor-pointer hover:bg-gray-50"
+         @click="openEdit(r)">
+      <div class="flex-shrink-0 text-center min-w-12">
+        <p class="text-xs text-gray-400">{{ r.date?.slice(5,7) }}/{{ r.date?.slice(8,10) }}</p>
+        <p class="text-xs text-gray-500">{{ ['日','月','火','水','木','金','土'][new Date(r.date+'T00:00').getDay()] }}曜</p>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-semibold text-sm text-gray-800">{{ r.groundName || '（グラウンド名未入力）' }}</span>
+          <span :class="usageColor(r.usage)" class="text-xs px-2 py-0.5 rounded-full font-semibold">{{ usageLabel(r.usage) }}</span>
+          <span :class="statusColor(r.status)" class="text-xs px-2 py-0.5 rounded-full font-semibold">{{ statusLabel(r.status) }}</span>
+        </div>
+        <p v-if="r.timeStart || r.timeEnd" class="text-xs text-gray-400 mt-0.5">
+          {{ r.timeStart || '' }}{{ r.timeStart && r.timeEnd ? '〜' : '' }}{{ r.timeEnd || '' }}
+        </p>
+        <p v-if="r.notes" class="text-xs text-gray-400 truncate">{{ r.notes }}</p>
+      </div>
+      <button @click.stop="del(r)" class="text-gray-300 hover:text-red-400 text-sm flex-shrink-0">🗑</button>
+    </div>
+  </div>
+
+  <!-- 月の一覧（カレンダー下） -->
+  <div v-if="viewMode==='calendar' && monthReservations.length > 0" class="mt-2">
+    <h3 class="text-xs font-semibold text-gray-500 mb-2">{{ calMonth + 1 }}月の予約一覧</h3>
+    <div v-for="r in monthReservations" :key="r.id"
+         class="bg-white rounded-xl shadow mb-2 px-4 py-3 flex items-start gap-3 cursor-pointer hover:bg-gray-50"
+         @click="openEdit(r)">
+      <div class="flex-shrink-0 text-center min-w-10">
+        <p class="text-sm font-bold text-indigo-600">{{ r.date?.slice(8,10) }}日</p>
+        <p class="text-xs text-gray-400">{{ ['日','月','火','水','木','金','土'][new Date(r.date+'T00:00').getDay()] }}</p>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-semibold text-sm text-gray-800">{{ r.groundName || '（名称未入力）' }}</span>
+          <span :class="usageColor(r.usage)" class="text-xs px-2 py-0.5 rounded-full font-semibold">{{ usageLabel(r.usage) }}</span>
+          <span :class="statusColor(r.status)" class="text-xs px-2 py-0.5 rounded-full font-semibold">{{ statusLabel(r.status) }}</span>
+        </div>
+        <p v-if="r.timeStart || r.timeEnd" class="text-xs text-gray-400 mt-0.5">
+          {{ r.timeStart || '' }}{{ r.timeStart && r.timeEnd ? '〜' : '' }}{{ r.timeEnd || '' }}
+        </p>
+        <p v-if="r.notes" class="text-xs text-gray-400 truncate">{{ r.notes }}</p>
+      </div>
+      <button @click.stop="del(r)" class="text-gray-300 hover:text-red-400 text-sm flex-shrink-0">🗑</button>
+    </div>
+  </div>
+
+  <!-- 入力モーダル -->
+  <div v-if="modal" class="fixed inset-0 bg-black/40 z-50 flex items-end md:items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div class="flex items-center justify-between px-5 py-4 border-b">
+        <h3 class="font-bold text-gray-800">{{ editing ? '予約を編集' : 'グラウンド予約を追加' }}</h3>
+        <button @click="modal=false" class="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+      </div>
+      <div class="px-5 py-4 space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">日付 <span class="text-red-400">*</span></label>
+          <input v-model="form.date" type="date" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">開始時刻</label>
+            <input v-model="form.timeStart" type="time" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">終了時刻</label>
+            <input v-model="form.timeEnd" type="time" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">グラウンド名</label>
+          <input v-model="form.groundName" type="text" placeholder="例: ○○公園グラウンド" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">用途</label>
+            <select v-model="form.usage" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
+              <option v-for="u in GROUND_USAGE" :key="u.code" :value="u.code">{{ u.label }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">状況</label>
+            <select v-model="form.status" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
+              <option v-for="s in GROUND_STATUS" :key="s.code" :value="s.code">{{ s.label }}</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">メモ</label>
+          <textarea v-model="form.notes" rows="2" placeholder="連絡事項、注意点など" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 resize-none"></textarea>
+        </div>
+      </div>
+      <div class="flex gap-3 px-5 pb-5">
+        <button v-if="editing" @click="del({id:editing,date:form.date,groundName:form.groundName}); modal=false"
+                class="px-4 py-2 border border-red-300 text-red-500 rounded-xl text-sm hover:bg-red-50">削除</button>
+        <div class="flex-1"></div>
+        <button @click="modal=false" class="px-4 py-2 border rounded-xl text-sm text-gray-500 hover:bg-gray-50">キャンセル</button>
+        <button @click="save" class="px-6 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+  `
+};
+
 // ── ラインナップシミュレーター ──────────────────
 const SIM_PATTERNS_KEY = 'softball_sim_patterns';
 const SIM_DRAFT_KEY    = 'softball_sim_draft'; // legacy
@@ -2412,7 +2680,7 @@ const LineupSim = {
 
 // ── ルーター ────────────────────────────────────
 const App = {
-  components: { Dashboard, Members, Schedule, EventDetail, Stats, LineupSim },
+  components: { Dashboard, Members, Schedule, EventDetail, Stats, LineupSim, GroundSchedule },
   setup() {
     const hash = ref(location.hash.replace('#', '') || '/');
     window.addEventListener('hashchange', () => {
@@ -2427,6 +2695,7 @@ const App = {
       if (h.startsWith('/events/'))  return EventDetail;
       if (h === '/stats')            return Stats;
       if (h === '/sim')              return LineupSim;
+      if (h === '/ground')           return GroundSchedule;
       return Dashboard;
     });
 
@@ -2437,8 +2706,8 @@ const App = {
 
     const navLinks = [
       { href: '#/', label: 'ホーム', icon: '🏠' },
-      { href: '#/members', label: 'メンバー', icon: '👥' },
       { href: '#/schedule', label: '日程', icon: '📅' },
+      { href: '#/ground', label: 'グラウンド', icon: '⛳' },
       { href: '#/sim', label: 'オーダー', icon: '🎯' },
       { href: '#/stats', label: '成績', icon: '📊' },
     ];
