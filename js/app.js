@@ -2055,9 +2055,10 @@ const GROUND_USAGE = [
   { code: 'other',     label: 'その他',   color: 'gray'   },
 ];
 const GROUND_STATUS = [
-  { code: 'confirmed', label: '確定',   color: 'green'  },
-  { code: 'pending',   label: '申請中', color: 'yellow' },
-  { code: 'cancelled', label: 'キャンセル', color: 'red' },
+  { code: 'confirmed',   label: '確定',     color: 'green'  },
+  { code: 'pending',     label: '申請中',   color: 'yellow' },
+  { code: 'cancelled',   label: 'キャンセル', color: 'red'  },
+  { code: 'unavailable', label: '使用不可', color: 'red'    },
 ];
 
 const GroundSchedule = {
@@ -2071,11 +2072,11 @@ const GroundSchedule = {
 
     const form = Vue.reactive({
       date: '', timeStart: '', timeEnd: '',
-      groundName: '', usage: 'practice', status: 'confirmed', notes: '',
+      groundName: '', usage: 'practice', status: 'confirmed', notes: '', unavailableReason: '',
     });
 
     function resetForm() {
-      Object.assign(form, { date: '', timeStart: '', timeEnd: '', groundName: '', usage: 'practice', status: 'confirmed', notes: '' });
+      Object.assign(form, { date: '', timeStart: '', timeEnd: '', groundName: '', usage: 'practice', status: 'confirmed', notes: '', unavailableReason: '' });
     }
 
     function dateStr(d) {
@@ -2132,12 +2133,12 @@ const GroundSchedule = {
     }
     function openEdit(r) {
       editing.value = r.id;
-      Object.assign(form, { date: r.date, timeStart: r.timeStart || '', timeEnd: r.timeEnd || '', groundName: r.groundName || '', usage: r.usage || 'practice', status: r.status || 'confirmed', notes: r.notes || '' });
+      Object.assign(form, { date: r.date, timeStart: r.timeStart || '', timeEnd: r.timeEnd || '', groundName: r.groundName || '', usage: r.usage || 'practice', status: r.status || 'confirmed', notes: r.notes || '', unavailableReason: r.unavailableReason || '' });
       modal.value = true;
     }
     function save() {
       if (!form.date) return alert('日付を選択してください');
-      const data = { date: form.date, timeStart: form.timeStart, timeEnd: form.timeEnd, groundName: form.groundName.trim(), usage: form.usage, status: form.status, notes: form.notes.trim() };
+      const data = { date: form.date, timeStart: form.timeStart, timeEnd: form.timeEnd, groundName: form.groundName.trim(), usage: form.usage, status: form.status, notes: form.notes.trim(), unavailableReason: form.status === 'unavailable' ? form.unavailableReason.trim() : '' };
       if (editing.value) { store.updateGround(editing.value, data); modal.value = false; }
       else { store.addGround(data); modal.value = false; }
     }
@@ -2152,14 +2153,16 @@ const GroundSchedule = {
       return u ? `bg-${u.color}-100 text-${u.color}-700` : 'bg-gray-100 text-gray-600';
     }
     function statusColor(code) {
+      if (code === 'unavailable') return 'bg-red-600 text-white';
       const s = GROUND_STATUS.find(s => s.code === code);
       return s ? `bg-${s.color}-100 text-${s.color}-700` : 'bg-gray-100 text-gray-600';
     }
+    function isUnavailable(r) { return r.status === 'unavailable'; }
 
     return { calYear, calMonth, calDays, modal, form, editing, viewMode,
       monthReservations, upcomingReservations, reservationsOnDay,
       prevMonth, nextMonth, isToday, openAdd, openEdit, save, del,
-      GROUND_USAGE, GROUND_STATUS, usageLabel, statusLabel, usageColor, statusColor,
+      GROUND_USAGE, GROUND_STATUS, usageLabel, statusLabel, usageColor, statusColor, isUnavailable,
       navigate, store };
   },
   template: `
@@ -2190,17 +2193,22 @@ const GroundSchedule = {
       </div>
       <div class="grid grid-cols-7">
         <div v-for="(day, idx) in calDays" :key="idx"
-             :class="[day ? 'cursor-pointer hover:bg-indigo-50' : '', isToday(day) && day ? 'bg-indigo-50' : '']"
+             :class="[day ? 'cursor-pointer' : '',
+                      day && reservationsOnDay(day).some(isUnavailable) ? 'bg-red-50 hover:bg-red-100' :
+                      isToday(day) && day ? 'bg-indigo-50 hover:bg-indigo-100' : day ? 'hover:bg-gray-50' : '']"
              class="min-h-14 border-b border-r border-gray-100 p-1"
-             @click="day && openAdd(\`\${calYear}-\${String(calMonth+1).padStart(2,'0')}-\${String(day).padStart(2,'0')}\`)">
-          <span v-if="day"
-                :class="isToday(day) ? 'bg-indigo-600 text-white w-6 h-6 rounded-full flex items-center justify-center font-bold' : 'text-gray-700'"
-                class="text-xs block w-6 h-6 flex items-center justify-center">{{ day }}</span>
+             @click="day && openAdd(\`\${calYear}-\${String(calMonth+1).padStart(2,'00')}-\${String(day).padStart(2,'0')}\`)">
+          <div v-if="day" class="flex items-center justify-between">
+            <span :class="isToday(day) ? 'bg-indigo-600 text-white rounded-full font-bold' : 'text-gray-700'"
+                  class="text-xs w-6 h-6 flex items-center justify-center">{{ day }}</span>
+            <span v-if="reservationsOnDay(day).some(isUnavailable)" class="text-red-500 text-xs font-bold leading-none">✕</span>
+          </div>
           <div v-for="r in reservationsOnDay(day)" :key="r.id"
                @click.stop="openEdit(r)"
-               :class="usageColor(r.usage)"
+               :class="isUnavailable(r) ? 'bg-red-600 text-white' : usageColor(r.usage)"
                class="text-xs rounded px-1 py-0.5 mt-0.5 truncate leading-tight cursor-pointer">
-            {{ r.timeStart ? r.timeStart.slice(0,5) : '' }} {{ r.groundName || usageLabel(r.usage) }}
+            <template v-if="isUnavailable(r)">✕ 使用不可</template>
+            <template v-else>{{ r.timeStart ? r.timeStart.slice(0,5) : '' }} {{ r.groundName || usageLabel(r.usage) }}</template>
           </div>
         </div>
       </div>
@@ -2211,18 +2219,24 @@ const GroundSchedule = {
   <div v-if="viewMode==='list'">
     <div v-if="upcomingReservations.length===0" class="text-center text-gray-400 py-10">予約はありません</div>
     <div v-for="r in upcomingReservations" :key="r.id"
-         class="bg-white rounded-xl shadow mb-2 px-4 py-3 flex items-start gap-3 cursor-pointer hover:bg-gray-50"
+         :class="isUnavailable(r) ? 'bg-red-50 border border-red-200' : 'bg-white'"
+         class="rounded-xl shadow mb-2 px-4 py-3 flex items-start gap-3 cursor-pointer hover:opacity-90"
          @click="openEdit(r)">
       <div class="flex-shrink-0 text-center min-w-12">
-        <p class="text-xs text-gray-400">{{ r.date?.slice(5,7) }}/{{ r.date?.slice(8,10) }}</p>
+        <p :class="isUnavailable(r) ? 'text-red-600 font-bold' : 'text-gray-400'" class="text-xs">{{ r.date?.slice(5,7) }}/{{ r.date?.slice(8,10) }}</p>
         <p class="text-xs text-gray-500">{{ ['日','月','火','水','木','金','土'][new Date(r.date+'T00:00').getDay()] }}曜</p>
+        <span v-if="isUnavailable(r)" class="text-red-500 text-lg font-bold leading-none">✕</span>
       </div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="font-semibold text-sm text-gray-800">{{ r.groundName || '（グラウンド名未入力）' }}</span>
-          <span :class="usageColor(r.usage)" class="text-xs px-2 py-0.5 rounded-full font-semibold">{{ usageLabel(r.usage) }}</span>
+          <span :class="isUnavailable(r) ? 'text-red-700 font-bold' : 'text-gray-800'" class="font-semibold text-sm">
+            {{ isUnavailable(r) ? '使用不可' : (r.groundName || '（グラウンド名未入力）') }}
+          </span>
+          <span v-if="!isUnavailable(r)" :class="usageColor(r.usage)" class="text-xs px-2 py-0.5 rounded-full font-semibold">{{ usageLabel(r.usage) }}</span>
           <span :class="statusColor(r.status)" class="text-xs px-2 py-0.5 rounded-full font-semibold">{{ statusLabel(r.status) }}</span>
         </div>
+        <p v-if="isUnavailable(r) && r.unavailableReason" class="text-xs text-red-600 mt-0.5 font-medium">理由: {{ r.unavailableReason }}</p>
+        <p v-if="isUnavailable(r) && r.groundName" class="text-xs text-gray-400 mt-0.5">{{ r.groundName }}</p>
         <p v-if="r.timeStart || r.timeEnd" class="text-xs text-gray-400 mt-0.5">
           {{ r.timeStart || '' }}{{ r.timeStart && r.timeEnd ? '〜' : '' }}{{ r.timeEnd || '' }}
         </p>
@@ -2236,18 +2250,24 @@ const GroundSchedule = {
   <div v-if="viewMode==='calendar' && monthReservations.length > 0" class="mt-2">
     <h3 class="text-xs font-semibold text-gray-500 mb-2">{{ calMonth + 1 }}月の予約一覧</h3>
     <div v-for="r in monthReservations" :key="r.id"
-         class="bg-white rounded-xl shadow mb-2 px-4 py-3 flex items-start gap-3 cursor-pointer hover:bg-gray-50"
+         :class="isUnavailable(r) ? 'bg-red-50 border border-red-200' : 'bg-white'"
+         class="rounded-xl shadow mb-2 px-4 py-3 flex items-start gap-3 cursor-pointer hover:opacity-90"
          @click="openEdit(r)">
       <div class="flex-shrink-0 text-center min-w-10">
-        <p class="text-sm font-bold text-indigo-600">{{ r.date?.slice(8,10) }}日</p>
+        <p :class="isUnavailable(r) ? 'text-red-600' : 'text-indigo-600'" class="text-sm font-bold">{{ r.date?.slice(8,10) }}日</p>
         <p class="text-xs text-gray-400">{{ ['日','月','火','水','木','金','土'][new Date(r.date+'T00:00').getDay()] }}</p>
+        <span v-if="isUnavailable(r)" class="text-red-500 text-base font-bold">✕</span>
       </div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="font-semibold text-sm text-gray-800">{{ r.groundName || '（名称未入力）' }}</span>
-          <span :class="usageColor(r.usage)" class="text-xs px-2 py-0.5 rounded-full font-semibold">{{ usageLabel(r.usage) }}</span>
+          <span :class="isUnavailable(r) ? 'text-red-700 font-bold' : 'text-gray-800'" class="font-semibold text-sm">
+            {{ isUnavailable(r) ? '使用不可' : (r.groundName || '（名称未入力）') }}
+          </span>
+          <span v-if="!isUnavailable(r)" :class="usageColor(r.usage)" class="text-xs px-2 py-0.5 rounded-full font-semibold">{{ usageLabel(r.usage) }}</span>
           <span :class="statusColor(r.status)" class="text-xs px-2 py-0.5 rounded-full font-semibold">{{ statusLabel(r.status) }}</span>
         </div>
+        <p v-if="isUnavailable(r) && r.unavailableReason" class="text-xs text-red-600 mt-0.5 font-medium">理由: {{ r.unavailableReason }}</p>
+        <p v-if="isUnavailable(r) && r.groundName" class="text-xs text-gray-400 mt-0.5">{{ r.groundName }}</p>
         <p v-if="r.timeStart || r.timeEnd" class="text-xs text-gray-400 mt-0.5">
           {{ r.timeStart || '' }}{{ r.timeStart && r.timeEnd ? '〜' : '' }}{{ r.timeEnd || '' }}
         </p>
@@ -2296,6 +2316,12 @@ const GroundSchedule = {
               <option v-for="s in GROUND_STATUS" :key="s.code" :value="s.code">{{ s.label }}</option>
             </select>
           </div>
+        </div>
+        <!-- 使用不可の理由 -->
+        <div v-if="form.status==='unavailable'" class="bg-red-50 border border-red-200 rounded-xl p-3">
+          <label class="block text-xs font-medium text-red-700 mb-1">使用不可の理由 <span class="text-red-400">*</span></label>
+          <input v-model="form.unavailableReason" type="text" placeholder="例: 他団体予約、整備、悪天候など"
+                 class="w-full border border-red-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 bg-white">
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-600 mb-1">メモ</label>
