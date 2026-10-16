@@ -1145,9 +1145,48 @@ const EventDetail = {
       store.updateEvent(ev.value.id, { homeAway: ev.value.homeAway === 'home' ? 'away' : 'home' });
     }
 
+    // ── 添付ファイル ──
+    const attachments = computed(() => ev.value?.attachments || []);
+    const uploadProgress = ref(null); // null | 0-100
+    const uploadError    = ref('');
+
+    async function handleFileSelect(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      // 20MB上限
+      if (file.size > 20 * 1024 * 1024) { uploadError.value = 'ファイルサイズは20MB以下にしてください'; e.target.value = ''; return; }
+      uploadError.value = '';
+      uploadProgress.value = 0;
+      try {
+        await store.uploadAttachment(props.eventId, file, p => { uploadProgress.value = p; });
+        uploadProgress.value = null;
+      } catch(err) {
+        uploadError.value = 'アップロードに失敗しました: ' + (err.message || err);
+        uploadProgress.value = null;
+      }
+      e.target.value = '';
+    }
+    async function deleteAttachment(att) {
+      if (!confirm(`「${att.name}」を削除しますか？`)) return;
+      await store.deleteAttachment(props.eventId, att);
+    }
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + 'B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + 'KB';
+      return (bytes / 1024 / 1024).toFixed(1) + 'MB';
+    }
+    function fileIcon(type) {
+      if (type?.startsWith('image/')) return '🖼';
+      if (type === 'application/pdf') return '📄';
+      if (type?.includes('word')) return '📝';
+      if (type?.includes('excel') || type?.includes('spreadsheet')) return '📊';
+      return '📎';
+    }
+
     return { ev, tab, scoreUs, scoreThem, innings, lineup, fpMemberId, fpPosition, useDP, totalUs, totalThem, autoResult, saveScore, addInning, removeInning, swapScores, swapHomeAway, saveLineup, memberName, inningLabel, setDP, dpOrder, sortedMembers, POSITIONS, navigate, posLabel, attendance, getAttStatus, setAttStatus, saveAttendance, memberGroups, attSummary, selectedPos, FIELD_POS_LIST, simPlayerName, simAssign, playerMembers, attendingPlayerMembers, benchMembers, availableForEntry, dragFrom, onDragStart, onDragOver, onDrop, isGameType, isSocialType, hasMapLink, timeOfDayLabel, googleMapsUrl, eventTypeLabel, memberShortName, atBats, pitcherLog, abModal, pitcherModal, pitcherInningEdit, getMemberAtBats, openAbModal, setAbResult, addAbInning, saveRecord, addPitcher, savePitcher, removePitcher, inningNums, orderedLineup, AT_BAT_RESULTS, abResultColor, store, lineups, activeLineupIdx, switchLineupSlot, addLineupSlot, deleteLineupSlot, renamingIdx, renameText, startRename, confirmRename, guests, newGuestName, newGuestGrade, newGuestNumber, addGuest, removeGuest, guestMembers, isSubstituted, canReEnter, doReEntry, clearReEntry,
       opponentAtBats, oppAbModal, recordSubTab, openOppAbModal, setOppAbResult, getOppAb, oppInningOrders, oppInningOuts, OUT_RESULTS,
-      gameStartTime, timerRunning, timerElapsed, timerDisplay, timerOver50, timerOver45, startTimer, pauseTimer, resetTimer };
+      gameStartTime, timerRunning, timerElapsed, timerDisplay, timerOver50, timerOver45, startTimer, pauseTimer, resetTimer,
+      attachments, uploadProgress, uploadError, handleFileSelect, deleteAttachment, formatFileSize, fileIcon };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -1188,6 +1227,41 @@ const EventDetail = {
         <a v-if="hasMapLink(ev.type) && ev.location" :href="googleMapsUrl(ev.location)" target="_blank"
            class="ml-2 text-xs text-blue-500 underline">🗺 地図</a>
       </div>
+    </div>
+  </div>
+
+  <!-- 添付ファイル -->
+  <div class="bg-white rounded-2xl shadow p-4 mb-4">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="text-sm font-semibold text-gray-700">📎 添付ファイル</h3>
+      <label class="cursor-pointer text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-indigo-700">
+        ＋ 追加
+        <input type="file" class="hidden" @change="handleFileSelect" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.txt,.csv">
+      </label>
+    </div>
+
+    <!-- アップロード進捗 -->
+    <div v-if="uploadProgress !== null" class="mb-2">
+      <div class="flex items-center gap-2 text-xs text-indigo-600 mb-1">
+        <span>アップロード中...</span><span>{{ uploadProgress }}%</span>
+      </div>
+      <div class="w-full bg-gray-200 rounded-full h-1.5">
+        <div class="bg-indigo-600 h-1.5 rounded-full transition-all" :style="{ width: uploadProgress + '%' }"></div>
+      </div>
+    </div>
+    <p v-if="uploadError" class="text-xs text-red-500 mb-2">{{ uploadError }}</p>
+
+    <!-- ファイル一覧 -->
+    <div v-if="attachments.length === 0 && uploadProgress === null" class="text-xs text-gray-400 py-1">添付ファイルなし</div>
+    <div v-for="att in attachments" :key="att.path"
+         class="flex items-center gap-2 py-2 border-b last:border-0">
+      <span class="text-lg flex-shrink-0">{{ fileIcon(att.type) }}</span>
+      <div class="flex-1 min-w-0">
+        <a :href="att.url" target="_blank" rel="noopener"
+           class="text-sm font-medium text-indigo-600 hover:underline truncate block">{{ att.name }}</a>
+        <span class="text-xs text-gray-400">{{ formatFileSize(att.size) }}</span>
+      </div>
+      <button @click="deleteAttachment(att)" class="text-gray-300 hover:text-red-400 text-sm flex-shrink-0">🗑</button>
     </div>
   </div>
 

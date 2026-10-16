@@ -10,7 +10,8 @@ const firebaseConfig = {
 };
 
 firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+const db      = firebase.firestore();
+const storage = firebase.storage();
 
 function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -99,6 +100,33 @@ window.store = Vue.reactive({
     db.collection('events').doc(id).delete();
   },
   getEvent(id) { return this.events.find(e => e.id === id); },
+
+  // ── ファイル添付 ──────────────────────────────
+  async uploadAttachment(eventId, file, onProgress) {
+    const path = `events/${eventId}/${Date.now()}_${file.name}`;
+    const ref  = storage.ref(path);
+    const task = ref.put(file);
+    return new Promise((resolve, reject) => {
+      task.on('state_changed',
+        snap => { if (onProgress) onProgress(Math.round(snap.bytesTransferred / snap.totalBytes * 100)); },
+        err  => reject(err),
+        async () => {
+          const url = await ref.getDownloadURL();
+          const att = { name: file.name, url, path, size: file.size, type: file.type, uploadedAt: new Date().toISOString() };
+          await db.collection('events').doc(eventId).update({
+            attachments: firebase.firestore.FieldValue.arrayUnion(att)
+          });
+          resolve(att);
+        }
+      );
+    });
+  },
+  async deleteAttachment(eventId, att) {
+    try { await storage.ref(att.path).delete(); } catch(e) { /* すでに削除済みの場合は無視 */ }
+    await db.collection('events').doc(eventId).update({
+      attachments: firebase.firestore.FieldValue.arrayRemove(att)
+    });
+  },
 
   // ── グラウンド予約 ────────────────────────────
   addGround(data) {
