@@ -2260,11 +2260,72 @@ const LiveGame = {
       save();
     }
 
-    // 先攻チーム名
-    const homeTeam  = computed(() => ev.value?.homeAway === 'home' ? store.teamName : (ev.value?.opponent || '相手'));
-    const awayTeam  = computed(() => ev.value?.homeAway === 'home' ? (ev.value?.opponent || '相手') : store.teamName);
-    // 先攻=表→awayがバッター
+    // 先攻後攻 (homeAway を一時的に上書きして入れ替え可能)
+    // liveHomeAway: null=イベント設定に従う, 'home'/'away'=上書き
+    const liveHomeAway = ref(null);
+    const effectiveHomeAway = computed(() => liveHomeAway.value || ev.value?.homeAway || 'home');
+
+    const homeTeam  = computed(() => effectiveHomeAway.value === 'home' ? store.teamName : (ev.value?.opponent || '相手'));
+    const awayTeam  = computed(() => effectiveHomeAway.value === 'home' ? (ev.value?.opponent || '相手') : store.teamName);
     const battingTeam = computed(() => isTop.value ? awayTeam.value : homeTeam.value);
+
+    function swapHomeAway() {
+      liveHomeAway.value = effectiveHomeAway.value === 'home' ? 'away' : 'home';
+    }
+
+    // ラインナップ・ベンチ
+    const activeSlot = computed(() => {
+      const e = ev.value;
+      if (!e) return null;
+      const slots = e.lineups || [];
+      if (slots.length === 0) return null;
+      return slots[0]; // 最初のスロット使用
+    });
+
+    const lineupRows = computed(() => {
+      if (!activeSlot.value) return [];
+      return (activeSlot.value.lineup || []).filter(r => r.memberId);
+    });
+
+    function getMemberById(id) {
+      if (!id) return null;
+      if (id.startsWith('guest_')) {
+        const guests = ev.value?.guests || [];
+        return guests.find(g => g.id === id) || null;
+      }
+      return store.getMember(id);
+    }
+
+    function playerLabel(id) {
+      const m = getMemberById(id);
+      if (!m) return id;
+      const name = m.shortName || m.name || '';
+      const num  = m.number ? `#${m.number}` : '';
+      return num ? `${num} ${name}` : name;
+    }
+
+    // ベンチメンバー = 登録済みメンバーのうちスタメンに入っていない人
+    const benchMembers = computed(() => {
+      const starters = new Set((lineupRows.value || []).map(r => r.memberId).filter(Boolean));
+      // 控えとして明示的にFPに設定されているメンバーもスタメン扱い
+      if (activeSlot.value?.fpMemberId) starters.add(activeSlot.value.fpMemberId);
+      return store.members.filter(m => !starters.has(m.id) && m.type !== 'staff');
+    });
+
+    // 交代履歴: スタメンと現在のメンバーIDが違う打順
+    const substitutions = computed(() => {
+      return (lineupRows.value || [])
+        .filter(r => r.starterId && r.starterId !== r.memberId)
+        .map(r => ({
+          order: r.order,
+          from: playerLabel(r.starterId),
+          to:   playerLabel(r.memberId),
+          reEntryUsed: r.reEntryUsed,
+        }));
+    });
+
+    // 表示タブ
+    const liveTab = ref('score'); // 'score' | 'lineup' | 'bench'
 
     Vue.onUnmounted(() => { pauseTimer(); });
 
@@ -2273,7 +2334,9 @@ const LiveGame = {
       timerDisplay, timerRemain, timerOver50, timerOver45, timerPct, timerRunning,
       gameStartTime, startTimer, pauseTimer, resetTimer,
       nextHalf, prevHalf, tapBall, tapStrike, tapOut, resetBSO, addScore,
-      homeTeam, awayTeam, battingTeam, navigate, store };
+      homeTeam, awayTeam, battingTeam, swapHomeAway, effectiveHomeAway,
+      lineupRows, benchMembers, substitutions, playerLabel, getMemberById,
+      liveTab, navigate, store };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -2284,8 +2347,30 @@ const LiveGame = {
     <button @click="navigate('#/events/'+eventId)"
             class="text-gray-400 hover:text-white text-sm px-2 py-1">◀ 戻る</button>
     <span class="text-xs text-gray-400 font-medium">{{ ev.date }} {{ ev.opponent||'' }}</span>
-    <div class="w-16"></div>
+    <!-- 先攻/後攻入れ替え -->
+    <button @click="swapHomeAway"
+            class="text-xs border border-gray-600 rounded-lg px-2 py-1 text-gray-400 hover:text-white hover:border-gray-400">
+      {{ effectiveHomeAway==='home' ? '後攻→先攻' : '先攻→後攻' }}
+    </button>
   </div>
+
+  <!-- タブ切替 -->
+  <div class="flex px-4 pb-2 gap-2">
+    <button @click="liveTab='score'"
+            :class="liveTab==='score'?'bg-indigo-600 text-white':'bg-gray-800 text-gray-400 hover:text-white'"
+            class="flex-1 py-2 rounded-xl text-xs font-bold transition-colors">スコア</button>
+    <button @click="liveTab='lineup'"
+            :class="liveTab==='lineup'?'bg-indigo-600 text-white':'bg-gray-800 text-gray-400 hover:text-white'"
+            class="flex-1 py-2 rounded-xl text-xs font-bold transition-colors">
+      スタメン<span v-if="substitutions.length" class="ml-1 bg-orange-500 text-white text-xs rounded-full px-1">{{ substitutions.length }}</span>
+    </button>
+    <button @click="liveTab='bench'"
+            :class="liveTab==='bench'?'bg-indigo-600 text-white':'bg-gray-800 text-gray-400 hover:text-white'"
+            class="flex-1 py-2 rounded-xl text-xs font-bold transition-colors">ベンチ</button>
+  </div>
+
+  <!-- ===== スコアタブ ===== -->
+  <template v-if="liveTab==='score'">
 
   <!-- タイマーバー -->
   <div class="px-4 pb-3">
@@ -2347,11 +2432,11 @@ const LiveGame = {
         <tbody>
           <!-- 先攻（表が攻撃側） -->
           <tr class="border-t border-gray-700">
-            <td class="py-2 px-3 text-xs font-semibold text-gray-300 truncate max-w-16">{{ awayTeam }}</td>
+            <td class="py-2 px-3 text-xs font-semibold text-gray-300 truncate max-w-16">{{ awayTeam }}<span class="ml-1 text-blue-400 text-xs">先</span></td>
             <td v-for="(_, i) in scoreUs" :key="i"
                 :class="(i+1)===curInning?'bg-indigo-600/20':''"
                 class="py-1 px-1 text-center">
-              <div v-if="ev.homeAway==='home'" class="flex flex-col items-center gap-0.5">
+              <div v-if="effectiveHomeAway==='home'" class="flex flex-col items-center gap-0.5">
                 <button @click="addScore('us',i+1,1)" class="w-8 text-xs text-indigo-400 hover:text-indigo-200">＋</button>
                 <span class="text-base font-bold text-white tabular-nums">{{ scoreUs[i] }}</span>
                 <button @click="addScore('us',i+1,-1)" class="w-8 text-xs text-gray-500 hover:text-gray-300">−</button>
@@ -2363,18 +2448,18 @@ const LiveGame = {
               </div>
             </td>
             <td class="py-2 px-3 text-center">
-              <span class="text-xl font-black" :class="ev.homeAway==='home'?(totalUs>totalThem?'text-green-400':totalUs<totalThem?'text-red-400':'text-white'):(totalThem>totalUs?'text-green-400':totalThem<totalUs?'text-red-400':'text-white')">
-                {{ ev.homeAway==='home' ? totalUs : totalThem }}
+              <span class="text-xl font-black" :class="effectiveHomeAway==='home'?(totalUs>totalThem?'text-green-400':totalUs<totalThem?'text-red-400':'text-white'):(totalThem>totalUs?'text-green-400':totalThem<totalUs?'text-red-400':'text-white')">
+                {{ effectiveHomeAway==='home' ? totalUs : totalThem }}
               </span>
             </td>
           </tr>
           <!-- 後攻（裏が攻撃側） -->
           <tr class="border-t border-gray-700 bg-gray-800/50">
-            <td class="py-2 px-3 text-xs font-semibold text-indigo-300 truncate max-w-16">{{ homeTeam }}</td>
+            <td class="py-2 px-3 text-xs font-semibold text-indigo-300 truncate max-w-16">{{ homeTeam }}<span class="ml-1 text-orange-400 text-xs">後</span></td>
             <td v-for="(_, i) in scoreThem" :key="i"
                 :class="(i+1)===curInning?'bg-indigo-600/20':''"
                 class="py-1 px-1 text-center">
-              <div v-if="ev.homeAway==='home'" class="flex flex-col items-center gap-0.5">
+              <div v-if="effectiveHomeAway==='home'" class="flex flex-col items-center gap-0.5">
                 <button @click="addScore('them',i+1,1)" class="w-8 text-xs text-indigo-400 hover:text-indigo-200">＋</button>
                 <span class="text-base font-bold text-white tabular-nums">{{ scoreThem[i] }}</span>
                 <button @click="addScore('them',i+1,-1)" class="w-8 text-xs text-gray-500 hover:text-gray-300">−</button>
@@ -2386,8 +2471,8 @@ const LiveGame = {
               </div>
             </td>
             <td class="py-2 px-3 text-center">
-              <span class="text-xl font-black" :class="ev.homeAway==='home'?(totalThem>totalUs?'text-green-400':totalThem<totalUs?'text-red-400':'text-white'):(totalUs>totalThem?'text-green-400':totalUs<totalThem?'text-red-400':'text-white')">
-                {{ ev.homeAway==='home' ? totalThem : totalUs }}
+              <span class="text-xl font-black" :class="effectiveHomeAway==='home'?(totalThem>totalUs?'text-green-400':totalThem<totalUs?'text-red-400':'text-white'):(totalUs>totalThem?'text-green-400':totalUs<totalThem?'text-red-400':'text-white')">
+                {{ effectiveHomeAway==='home' ? totalThem : totalUs }}
               </span>
             </td>
           </tr>
@@ -2441,20 +2526,91 @@ const LiveGame = {
   <div class="mx-4 mb-6 bg-gray-800 rounded-2xl p-4">
     <div class="flex items-center justify-center gap-6">
       <div class="text-center flex-1">
-        <p class="text-xs text-gray-400 mb-1 truncate">{{ awayTeam }}</p>
-        <p class="text-5xl font-black tabular-nums" :class="(ev.homeAway==='home'?totalUs:totalThem) > (ev.homeAway==='home'?totalThem:totalUs) ? 'text-green-400' : 'text-white'">
-          {{ ev.homeAway==='home' ? totalUs : totalThem }}
+        <p class="text-xs text-gray-400 mb-1 truncate">{{ awayTeam }}<span class="ml-1 text-blue-400">先</span></p>
+        <p class="text-5xl font-black tabular-nums" :class="(effectiveHomeAway==='home'?totalUs:totalThem) > (effectiveHomeAway==='home'?totalThem:totalUs) ? 'text-green-400' : 'text-white'">
+          {{ effectiveHomeAway==='home' ? totalUs : totalThem }}
         </p>
       </div>
       <div class="text-2xl font-bold text-gray-600">−</div>
       <div class="text-center flex-1">
-        <p class="text-xs text-indigo-400 mb-1 truncate">{{ homeTeam }}</p>
-        <p class="text-5xl font-black tabular-nums" :class="(ev.homeAway==='home'?totalThem:totalUs) > (ev.homeAway==='home'?totalUs:totalThem) ? 'text-green-400' : 'text-white'">
-          {{ ev.homeAway==='home' ? totalThem : totalUs }}
+        <p class="text-xs text-indigo-400 mb-1 truncate">{{ homeTeam }}<span class="ml-1 text-orange-400">後</span></p>
+        <p class="text-5xl font-black tabular-nums" :class="(effectiveHomeAway==='home'?totalThem:totalUs) > (effectiveHomeAway==='home'?totalUs:totalThem) ? 'text-green-400' : 'text-white'">
+          {{ effectiveHomeAway==='home' ? totalThem : totalUs }}
         </p>
       </div>
     </div>
   </div>
+
+  </template><!-- /スコアタブ -->
+
+  <!-- ===== スタメンタブ ===== -->
+  <template v-if="liveTab==='lineup'">
+  <div class="px-4 pb-4 flex flex-col gap-3">
+
+    <!-- スタメン一覧 -->
+    <div class="bg-gray-800 rounded-2xl overflow-hidden">
+      <div class="px-4 py-2.5 bg-gray-700/50 text-xs font-bold text-gray-300 tracking-wider">スタメン</div>
+      <div v-if="lineupRows.length===0" class="px-4 py-6 text-center text-gray-500 text-sm">ラインナップ未登録</div>
+      <div v-for="row in lineupRows" :key="row.order"
+           class="flex items-center gap-3 px-4 py-2.5 border-t border-gray-700/50">
+        <!-- 打順 -->
+        <span class="w-6 text-center text-xs font-black text-gray-400">{{ row.order }}</span>
+        <!-- ポジション -->
+        <span class="w-8 text-center text-xs font-bold rounded px-1 py-0.5"
+              :class="row.position?'bg-indigo-600/40 text-indigo-300':'bg-gray-700 text-gray-500'">
+          {{ row.position || '−' }}
+        </span>
+        <!-- 選手名 (交代表示) -->
+        <div class="flex-1 min-w-0">
+          <div v-if="row.starterId && row.starterId !== row.memberId" class="flex items-center gap-1 flex-wrap">
+            <span class="text-gray-500 text-xs line-through">{{ playerLabel(row.starterId) }}</span>
+            <span class="text-orange-400 text-xs">→</span>
+            <span class="text-white text-sm font-semibold">{{ playerLabel(row.memberId) }}</span>
+            <span v-if="row.reEntryUsed" class="text-xs bg-yellow-700 text-yellow-200 px-1 rounded">再</span>
+          </div>
+          <span v-else class="text-white text-sm font-semibold">{{ playerLabel(row.memberId) }}</span>
+        </div>
+        <!-- DP表示 -->
+        <span v-if="row.isDP" class="text-xs text-yellow-400 font-bold">DP</span>
+      </div>
+    </div>
+
+    <!-- 交代履歴 -->
+    <div v-if="substitutions.length" class="bg-gray-800 rounded-2xl overflow-hidden">
+      <div class="px-4 py-2.5 bg-orange-900/40 text-xs font-bold text-orange-300 tracking-wider">交代履歴</div>
+      <div v-for="(sub, i) in substitutions" :key="i"
+           class="flex items-center gap-2 px-4 py-2.5 border-t border-gray-700/50">
+        <span class="w-6 text-center text-xs font-black text-gray-400">{{ sub.order }}</span>
+        <span class="text-gray-400 text-sm line-through">{{ sub.from }}</span>
+        <span class="text-orange-400 text-sm">→</span>
+        <span class="text-white text-sm font-semibold">{{ sub.to }}</span>
+        <span v-if="sub.reEntryUsed" class="text-xs bg-yellow-700 text-yellow-200 px-1.5 py-0.5 rounded ml-auto">リエントリー</span>
+      </div>
+    </div>
+    <p v-else class="text-center text-xs text-gray-600">交代なし</p>
+
+  </div>
+  </template><!-- /スタメンタブ -->
+
+  <!-- ===== ベンチタブ ===== -->
+  <template v-if="liveTab==='bench'">
+  <div class="px-4 pb-4">
+    <div class="bg-gray-800 rounded-2xl overflow-hidden">
+      <div class="px-4 py-2.5 bg-gray-700/50 text-xs font-bold text-gray-300 tracking-wider">ベンチメンバー</div>
+      <div v-if="benchMembers.length===0" class="px-4 py-6 text-center text-gray-500 text-sm">ベンチメンバーなし</div>
+      <div v-for="m in benchMembers" :key="m.id"
+           class="flex items-center gap-3 px-4 py-2.5 border-t border-gray-700/50">
+        <span class="w-10 text-center text-xs font-bold text-indigo-400">{{ m.number ? '#'+m.number : '−' }}</span>
+        <span class="flex-1 text-white text-sm font-semibold">{{ m.shortName || m.name }}</span>
+        <span class="text-xs text-gray-500">{{ m.grade ? m.grade+'年' : '' }}</span>
+        <div class="flex gap-1 flex-wrap justify-end max-w-28">
+          <span v-for="pos in (m.positions||[])" :key="pos"
+                class="text-xs bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{{ pos }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  </template><!-- /ベンチタブ -->
 
 </div>
   `
