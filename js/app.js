@@ -1288,6 +1288,13 @@ const EventDetail = {
     <template v-if="ev.type!=='holiday'">
     <!-- ===== スコアタブ ===== -->
     <div v-if="tab==='score'">
+      <!-- 試合管理ボタン -->
+      <div class="mb-3">
+        <a :href="'#/live/'+eventId"
+           class="flex items-center justify-center gap-2 w-full py-3 bg-gray-900 text-white rounded-xl font-bold text-sm hover:bg-gray-700 active:bg-gray-800">
+          ⚡ 試合管理画面（スコア・BSO・タイマー）
+        </a>
+      </div>
       <!-- 結果バナー -->
       <div v-if="ev.result" class="rounded-xl p-3 mb-4 text-center font-bold text-lg"
            :class="ev.result==='win'?'bg-green-100 text-green-700':ev.result==='lose'?'bg-red-100 text-red-500':'bg-gray-100 text-gray-600'">
@@ -2121,6 +2128,338 @@ const Stats = {
   }
 };
 
+// ── ライブゲーム管理 ────────────────────────────
+const LiveGame = {
+  props: ['eventId'],
+  setup(props) {
+    const ev = computed(() => store.getEvent(props.eventId));
+
+    // スコア
+    const innings    = ref(7);
+    const scoreUs    = ref([]);
+    const scoreThem  = ref([]);
+    const curInning  = ref(1);   // 現在イニング (1〜)
+    const isTop      = ref(true); // true=表(先攻), false=裏(後攻)
+
+    // BSO
+    const balls   = ref(0);
+    const strikes = ref(0);
+    const outs    = ref(0);
+
+    // タイマー
+    const gameStartTime = ref('');
+    const timerRunning  = ref(false);
+    const timerElapsed  = ref(0);
+    let   timerInterval = null;
+    const TIMER_LIMIT   = 50 * 60;
+
+    const timerDisplay = computed(() => {
+      const t = timerElapsed.value;
+      return `${Math.floor(t/60).toString().padStart(2,'0')}:${(t%60).toString().padStart(2,'0')}`;
+    });
+    const timerRemain = computed(() => {
+      const r = TIMER_LIMIT - timerElapsed.value;
+      if (r <= 0) return '00:00';
+      return `${Math.floor(r/60).toString().padStart(2,'0')}:${(r%60).toString().padStart(2,'0')}`;
+    });
+    const timerOver50 = computed(() => timerElapsed.value >= TIMER_LIMIT);
+    const timerOver45 = computed(() => timerElapsed.value >= 45 * 60);
+    const timerPct    = computed(() => Math.min(timerElapsed.value / TIMER_LIMIT * 100, 100));
+
+    function startTimer() {
+      if (timerRunning.value) return;
+      if (!gameStartTime.value) {
+        const n = new Date();
+        gameStartTime.value = n.getHours().toString().padStart(2,'0') + ':' + n.getMinutes().toString().padStart(2,'0');
+      }
+      timerRunning.value = true;
+      timerInterval = setInterval(() => { timerElapsed.value++; }, 1000);
+    }
+    function pauseTimer() { timerRunning.value = false; clearInterval(timerInterval); }
+    function resetTimer() {
+      if (!confirm('タイマーをリセットしますか？')) return;
+      pauseTimer(); timerElapsed.value = 0; gameStartTime.value = '';
+    }
+
+    // イベントデータ読み込み
+    Vue.watch(ev, (e) => {
+      if (!e) return;
+      innings.value   = e.innings || 7;
+      const len = innings.value;
+      scoreUs.value   = Array.from({length:len}, (_,i) => { const v=e.score?.us?.[i];   return v===undefined?0:v; });
+      scoreThem.value = Array.from({length:len}, (_,i) => { const v=e.score?.them?.[i]; return v===undefined?0:v; });
+      curInning.value    = e.liveInning    || 1;
+      isTop.value        = e.liveIsTop     !== false;
+      balls.value        = e.liveBalls     || 0;
+      strikes.value      = e.liveStrikes   || 0;
+      outs.value         = e.liveOuts      || 0;
+      gameStartTime.value = e.gameStartTime || '';
+      timerElapsed.value  = e.timerElapsed  || 0;
+    }, { immediate: true });
+
+    const totalUs   = computed(() => scoreUs.value.reduce((a,b)=>a+(Number(b)||0),0));
+    const totalThem = computed(() => scoreThem.value.reduce((a,b)=>a+(Number(b)||0),0));
+
+    function save() {
+      store.updateEvent(props.eventId, {
+        score:          { us: [...scoreUs.value], them: [...scoreThem.value] },
+        innings:        innings.value,
+        liveInning:     curInning.value,
+        liveIsTop:      isTop.value,
+        liveBalls:      balls.value,
+        liveStrikes:    strikes.value,
+        liveOuts:       outs.value,
+        gameStartTime:  gameStartTime.value,
+        timerElapsed:   timerElapsed.value,
+      });
+    }
+
+    // イニング・表裏操作
+    function nextHalf() {
+      balls.value = 0; strikes.value = 0; outs.value = 0;
+      if (!isTop.value) {
+        // 裏→次の回の表
+        if (curInning.value < innings.value) curInning.value++;
+        isTop.value = true;
+      } else {
+        isTop.value = false;
+      }
+      save();
+    }
+    function prevHalf() {
+      balls.value = 0; strikes.value = 0; outs.value = 0;
+      if (isTop.value) {
+        if (curInning.value > 1) { curInning.value--; isTop.value = false; }
+      } else {
+        isTop.value = true;
+      }
+      save();
+    }
+
+    // BSO 操作
+    function tapBall() {
+      if (balls.value >= 3) { balls.value = 0; } else { balls.value++; }
+      save();
+    }
+    function tapStrike() {
+      if (strikes.value >= 2) { strikes.value = 0; } else { strikes.value++; }
+      save();
+    }
+    function tapOut() {
+      if (outs.value >= 2) { outs.value = 0; } else { outs.value++; }
+      save();
+    }
+    function resetBSO() { balls.value = 0; strikes.value = 0; outs.value = 0; save(); }
+
+    // スコア変更
+    function addScore(team, inning, delta) {
+      const arr = team === 'us' ? scoreUs.value : scoreThem.value;
+      const idx = inning - 1;
+      const v = (Number(arr[idx]) || 0) + delta;
+      arr[idx] = Math.max(0, v);
+      save();
+    }
+
+    // 先攻チーム名
+    const homeTeam  = computed(() => ev.value?.homeAway === 'home' ? store.teamName : (ev.value?.opponent || '相手'));
+    const awayTeam  = computed(() => ev.value?.homeAway === 'home' ? (ev.value?.opponent || '相手') : store.teamName);
+    // 先攻=表→awayがバッター
+    const battingTeam = computed(() => isTop.value ? awayTeam.value : homeTeam.value);
+
+    Vue.onUnmounted(() => { pauseTimer(); });
+
+    return { ev, innings, scoreUs, scoreThem, curInning, isTop,
+      balls, strikes, outs, totalUs, totalThem,
+      timerDisplay, timerRemain, timerOver50, timerOver45, timerPct, timerRunning,
+      gameStartTime, startTimer, pauseTimer, resetTimer,
+      nextHalf, prevHalf, tapBall, tapStrike, tapOut, resetBSO, addScore,
+      homeTeam, awayTeam, battingTeam, navigate, store };
+  },
+  template: `
+<div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
+<div v-else class="min-h-screen bg-gray-900 text-white flex flex-col select-none">
+
+  <!-- ヘッダーバー -->
+  <div class="flex items-center justify-between px-4 pt-safe pt-3 pb-2 bg-gray-900">
+    <button @click="navigate('#/events/'+eventId)"
+            class="text-gray-400 hover:text-white text-sm px-2 py-1">◀ 戻る</button>
+    <span class="text-xs text-gray-400 font-medium">{{ ev.date }} {{ ev.opponent||'' }}</span>
+    <div class="w-16"></div>
+  </div>
+
+  <!-- タイマーバー -->
+  <div class="px-4 pb-3">
+    <div class="relative bg-gray-800 rounded-2xl overflow-hidden">
+      <!-- 進捗バー -->
+      <div class="absolute inset-0 rounded-2xl transition-all duration-1000"
+           :class="timerOver50?'bg-red-900/60':timerOver45?'bg-orange-900/40':'bg-green-900/30'"
+           :style="{ width: timerPct + '%' }"></div>
+      <div class="relative flex items-center justify-between px-4 py-2.5 gap-4">
+        <div class="flex items-center gap-3">
+          <span :class="timerOver50?'text-red-400 animate-pulse':timerOver45?'text-orange-400':'text-green-400'"
+                class="text-2xl font-mono font-bold tabular-nums">{{ timerDisplay }}</span>
+          <div class="text-right">
+            <div :class="timerOver50?'text-red-300':timerOver45?'text-orange-300':'text-gray-300'"
+                 class="text-xs font-semibold">残り {{ timerRemain }}</div>
+            <div v-if="gameStartTime" class="text-xs text-gray-500">開始 {{ gameStartTime }}</div>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button v-if="!timerRunning" @click="startTimer"
+                  class="px-4 py-1.5 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-500">▶</button>
+          <button v-else @click="pauseTimer"
+                  class="px-4 py-1.5 bg-yellow-500 text-white rounded-lg text-sm font-bold hover:bg-yellow-400">⏸</button>
+          <button @click="resetTimer"
+                  class="px-3 py-1.5 border border-gray-600 rounded-lg text-sm text-gray-400 hover:text-white">↺</button>
+        </div>
+      </div>
+    </div>
+    <div v-if="timerOver50" class="text-center text-red-400 text-xs font-bold mt-1 animate-pulse">⚠ 50分経過</div>
+  </div>
+
+  <!-- イニング表示 & 切替 -->
+  <div class="flex items-center justify-center gap-4 px-4 pb-3">
+    <button @click="prevHalf" class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-gray-300 text-lg hover:bg-gray-600">◀</button>
+    <div class="text-center">
+      <div class="text-3xl font-black text-white">{{ curInning }}<span class="text-lg font-bold text-gray-400">回</span></div>
+      <div class="flex items-center justify-center gap-2 mt-0.5">
+        <span :class="isTop?'bg-blue-500 text-white':'bg-gray-700 text-gray-400'" class="text-xs px-2.5 py-0.5 rounded-full font-bold">表</span>
+        <span :class="!isTop?'bg-orange-500 text-white':'bg-gray-700 text-gray-400'" class="text-xs px-2.5 py-0.5 rounded-full font-bold">裏</span>
+      </div>
+      <div class="text-xs text-gray-400 mt-0.5">攻撃: {{ battingTeam }}</div>
+    </div>
+    <button @click="nextHalf" class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-gray-300 text-lg hover:bg-gray-600">▶</button>
+  </div>
+
+  <!-- スコアボード -->
+  <div class="mx-4 mb-3 bg-gray-800 rounded-2xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-700/60">
+            <th class="py-1.5 px-3 text-left text-xs font-semibold text-gray-400 w-16">チーム</th>
+            <th v-for="i in innings" :key="i"
+                :class="i===curInning?'bg-indigo-600/40 text-indigo-300':'text-gray-500'"
+                class="py-1.5 px-1.5 text-center text-xs font-semibold w-9">{{ i }}</th>
+            <th class="py-1.5 px-3 text-center text-xs font-bold text-gray-300 w-10">計</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- 先攻（表が攻撃側） -->
+          <tr class="border-t border-gray-700">
+            <td class="py-2 px-3 text-xs font-semibold text-gray-300 truncate max-w-16">{{ awayTeam }}</td>
+            <td v-for="(_, i) in scoreUs" :key="i"
+                :class="(i+1)===curInning?'bg-indigo-600/20':''"
+                class="py-1 px-1 text-center">
+              <div v-if="ev.homeAway==='home'" class="flex flex-col items-center gap-0.5">
+                <button @click="addScore('us',i+1,1)" class="w-8 text-xs text-indigo-400 hover:text-indigo-200">＋</button>
+                <span class="text-base font-bold text-white tabular-nums">{{ scoreUs[i] }}</span>
+                <button @click="addScore('us',i+1,-1)" class="w-8 text-xs text-gray-500 hover:text-gray-300">−</button>
+              </div>
+              <div v-else class="flex flex-col items-center gap-0.5">
+                <button @click="addScore('them',i+1,1)" class="w-8 text-xs text-indigo-400 hover:text-indigo-200">＋</button>
+                <span class="text-base font-bold text-white tabular-nums">{{ scoreThem[i] }}</span>
+                <button @click="addScore('them',i+1,-1)" class="w-8 text-xs text-gray-500 hover:text-gray-300">−</button>
+              </div>
+            </td>
+            <td class="py-2 px-3 text-center">
+              <span class="text-xl font-black" :class="ev.homeAway==='home'?(totalUs>totalThem?'text-green-400':totalUs<totalThem?'text-red-400':'text-white'):(totalThem>totalUs?'text-green-400':totalThem<totalUs?'text-red-400':'text-white')">
+                {{ ev.homeAway==='home' ? totalUs : totalThem }}
+              </span>
+            </td>
+          </tr>
+          <!-- 後攻（裏が攻撃側） -->
+          <tr class="border-t border-gray-700 bg-gray-800/50">
+            <td class="py-2 px-3 text-xs font-semibold text-indigo-300 truncate max-w-16">{{ homeTeam }}</td>
+            <td v-for="(_, i) in scoreThem" :key="i"
+                :class="(i+1)===curInning?'bg-indigo-600/20':''"
+                class="py-1 px-1 text-center">
+              <div v-if="ev.homeAway==='home'" class="flex flex-col items-center gap-0.5">
+                <button @click="addScore('them',i+1,1)" class="w-8 text-xs text-indigo-400 hover:text-indigo-200">＋</button>
+                <span class="text-base font-bold text-white tabular-nums">{{ scoreThem[i] }}</span>
+                <button @click="addScore('them',i+1,-1)" class="w-8 text-xs text-gray-500 hover:text-gray-300">−</button>
+              </div>
+              <div v-else class="flex flex-col items-center gap-0.5">
+                <button @click="addScore('us',i+1,1)" class="w-8 text-xs text-indigo-400 hover:text-indigo-200">＋</button>
+                <span class="text-base font-bold text-white tabular-nums">{{ scoreUs[i] }}</span>
+                <button @click="addScore('us',i+1,-1)" class="w-8 text-xs text-gray-500 hover:text-gray-300">−</button>
+              </div>
+            </td>
+            <td class="py-2 px-3 text-center">
+              <span class="text-xl font-black" :class="ev.homeAway==='home'?(totalThem>totalUs?'text-green-400':totalThem<totalUs?'text-red-400':'text-white'):(totalUs>totalThem?'text-green-400':totalUs<totalThem?'text-red-400':'text-white')">
+                {{ ev.homeAway==='home' ? totalThem : totalUs }}
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- BSO カウンター -->
+  <div class="mx-4 mb-4 bg-gray-800 rounded-2xl p-4">
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-xs font-semibold text-gray-400 tracking-widest">B S O カウント</span>
+      <button @click="resetBSO" class="text-xs text-gray-500 hover:text-gray-300 px-2 py-1 border border-gray-700 rounded-lg">リセット</button>
+    </div>
+    <div class="grid grid-cols-3 gap-3">
+      <!-- Ball -->
+      <div @click="tapBall" class="bg-gray-700 hover:bg-gray-600 active:bg-gray-500 rounded-xl p-3 cursor-pointer transition-colors text-center">
+        <div class="text-xs font-bold text-green-400 mb-2 tracking-widest">BALL</div>
+        <div class="flex justify-center gap-1.5 mb-2">
+          <div v-for="i in 3" :key="i"
+               :class="i<=balls?'bg-green-400':'bg-gray-600'"
+               class="w-5 h-5 rounded-full transition-colors"></div>
+        </div>
+        <div class="text-3xl font-black" :class="balls>=3?'text-green-400':'text-white'">{{ balls }}</div>
+      </div>
+      <!-- Strike -->
+      <div @click="tapStrike" class="bg-gray-700 hover:bg-gray-600 active:bg-gray-500 rounded-xl p-3 cursor-pointer transition-colors text-center">
+        <div class="text-xs font-bold text-yellow-400 mb-2 tracking-widest">STRIKE</div>
+        <div class="flex justify-center gap-1.5 mb-2">
+          <div v-for="i in 2" :key="i"
+               :class="i<=strikes?'bg-yellow-400':'bg-gray-600'"
+               class="w-5 h-5 rounded-full transition-colors"></div>
+        </div>
+        <div class="text-3xl font-black" :class="strikes>=2?'text-yellow-400':'text-white'">{{ strikes }}</div>
+      </div>
+      <!-- Out -->
+      <div @click="tapOut" class="bg-gray-700 hover:bg-gray-600 active:bg-gray-500 rounded-xl p-3 cursor-pointer transition-colors text-center">
+        <div class="text-xs font-bold text-red-400 mb-2 tracking-widest">OUT</div>
+        <div class="flex justify-center gap-1.5 mb-2">
+          <div v-for="i in 2" :key="i"
+               :class="i<=outs?'bg-red-400':'bg-gray-600'"
+               class="w-5 h-5 rounded-full transition-colors"></div>
+        </div>
+        <div class="text-3xl font-black" :class="outs>=2?'text-red-400':'text-white'">{{ outs }}</div>
+      </div>
+    </div>
+    <p class="text-xs text-gray-600 text-center mt-2">各マスをタップしてカウントアップ（最大でリセット）</p>
+  </div>
+
+  <!-- 合計スコア大表示 -->
+  <div class="mx-4 mb-6 bg-gray-800 rounded-2xl p-4">
+    <div class="flex items-center justify-center gap-6">
+      <div class="text-center flex-1">
+        <p class="text-xs text-gray-400 mb-1 truncate">{{ awayTeam }}</p>
+        <p class="text-5xl font-black tabular-nums" :class="(ev.homeAway==='home'?totalUs:totalThem) > (ev.homeAway==='home'?totalThem:totalUs) ? 'text-green-400' : 'text-white'">
+          {{ ev.homeAway==='home' ? totalUs : totalThem }}
+        </p>
+      </div>
+      <div class="text-2xl font-bold text-gray-600">−</div>
+      <div class="text-center flex-1">
+        <p class="text-xs text-indigo-400 mb-1 truncate">{{ homeTeam }}</p>
+        <p class="text-5xl font-black tabular-nums" :class="(ev.homeAway==='home'?totalThem:totalUs) > (ev.homeAway==='home'?totalUs:totalThem) ? 'text-green-400' : 'text-white'">
+          {{ ev.homeAway==='home' ? totalThem : totalUs }}
+        </p>
+      </div>
+    </div>
+  </div>
+
+</div>
+  `
+};
+
 // ── グラウンド予約管理 ──────────────────────────
 const GROUND_USAGE = [
   { code: 'practice',  label: '練習',     color: 'green'  },
@@ -2780,12 +3119,14 @@ const LineupSim = {
 
 // ── ルーター ────────────────────────────────────
 const App = {
-  components: { Dashboard, Members, Schedule, EventDetail, Stats, LineupSim, GroundSchedule },
+  components: { Dashboard, Members, Schedule, EventDetail, Stats, LineupSim, GroundSchedule, LiveGame },
   setup() {
     const hash = ref(location.hash.replace('#', '') || '/');
     window.addEventListener('hashchange', () => {
       hash.value = location.hash.replace('#', '') || '/';
     });
+
+    const isLive = computed(() => hash.value.startsWith('/live/'));
 
     const pageComponent = computed(() => {
       const h = hash.value;
@@ -2793,6 +3134,7 @@ const App = {
       if (h.startsWith('/members'))  return Members;
       if (h.startsWith('/schedule')) return Schedule;
       if (h.startsWith('/events/'))  return EventDetail;
+      if (h.startsWith('/live/'))    return LiveGame;
       if (h === '/stats')            return Stats;
       if (h === '/sim')              return LineupSim;
       if (h === '/ground')           return GroundSchedule;
@@ -2800,8 +3142,8 @@ const App = {
     });
 
     const eventId = computed(() => {
-      const m = hash.value.match(/^\/events\/(.+)$/);
-      return m ? m[1] : null;
+      const m = hash.value.match(/^\/(events|live)\/(.+)$/);
+      return m ? m[2] : null;
     });
 
     const navLinks = [
@@ -2818,12 +3160,12 @@ const App = {
       return hash.value.startsWith(path);
     }
 
-    return { pageComponent, eventId, navLinks, isActive };
+    return { pageComponent, eventId, navLinks, isActive, isLive };
   },
   template: `
 <div class="min-h-screen bg-gray-50">
-  <!-- PCトップナビ -->
-  <nav class="hidden md:flex fixed top-0 left-0 right-0 bg-white border-b border-gray-200 z-50 h-14 items-center">
+  <!-- PCトップナビ (ライブ画面では非表示) -->
+  <nav v-if="!isLive" class="hidden md:flex fixed top-0 left-0 right-0 bg-white border-b border-gray-200 z-50 h-14 items-center">
     <div class="max-w-2xl mx-auto w-full px-4 flex items-center gap-6">
       <span class="font-bold text-indigo-700 mr-4">⚾ Softball Manager</span>
       <a v-for="l in navLinks" :key="l.href" :href="l.href"
@@ -2833,12 +3175,12 @@ const App = {
   </nav>
 
   <!-- メインコンテンツ -->
-  <div class="md:pt-14 pb-20 md:pb-0">
+  <div :class="isLive ? '' : 'md:pt-14 pb-20 md:pb-0'">
     <component :is="pageComponent" :eventId="eventId" />
   </div>
 
-  <!-- モバイルボトムナビ -->
-  <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 flex h-16">
+  <!-- モバイルボトムナビ (ライブ画面では非表示) -->
+  <nav v-if="!isLive" class="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 flex h-16">
     <a v-for="l in navLinks" :key="l.href" :href="l.href"
        :class="isActive(l.href)?'text-indigo-600':'text-gray-400'"
        class="flex-1 flex flex-col items-center justify-center gap-0.5 text-xs font-medium">
