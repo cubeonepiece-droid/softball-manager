@@ -2309,7 +2309,7 @@ const LiveGame = {
       const starters = new Set((lineupRows.value || []).map(r => r.memberId).filter(Boolean));
       // 控えとして明示的にFPに設定されているメンバーもスタメン扱い
       if (activeSlot.value?.fpMemberId) starters.add(activeSlot.value.fpMemberId);
-      return store.members.filter(m => !starters.has(m.id) && m.type === 'player');
+      return store.members.filter(m => !starters.has(m.id) && (m.type || 'player') === 'player');
     });
 
     // 交代履歴: スタメンと現在のメンバーIDが違う打順
