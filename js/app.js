@@ -2608,7 +2608,7 @@ const LiveGame = {
         <span class="text-xs text-gray-500">{{ m.grade ? m.grade+'年' : '' }}</span>
         <div class="flex gap-1 flex-wrap justify-end max-w-28">
           <span v-for="pos in (m.positions||[])" :key="pos"
-                class="text-xs bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{{ pos }}</span>
+                class="text-xs bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{{ positionLabel(pos) }}</span>
         </div>
       </div>
     </div>
