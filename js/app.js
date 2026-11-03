@@ -23,6 +23,9 @@ const MEMBER_TYPES = [
 function memberTypeLabel(code) {
   return MEMBER_TYPES.find(t => t.code === code)?.label || '選手';
 }
+function positionLabel(code) {
+  return POSITIONS.find(p => p.code === code)?.label || code || '';
+}
 
 const EVENT_TYPES = [
   { code: 'practice',   label: '練習',     color: 'green'  },
@@ -2336,7 +2339,7 @@ const LiveGame = {
       nextHalf, prevHalf, tapBall, tapStrike, tapOut, resetBSO, addScore,
       homeTeam, awayTeam, battingTeam, swapHomeAway, effectiveHomeAway,
       lineupRows, benchMembers, substitutions, playerLabel, getMemberById,
-      liveTab, navigate, store };
+      liveTab, positionLabel, navigate, store };
   },
   template: `
 <div v-if="!ev" class="text-center py-20 text-gray-400">イベントが見つかりません</div>
@@ -2556,9 +2559,9 @@ const LiveGame = {
         <!-- 打順 -->
         <span class="w-6 text-center text-xs font-black text-gray-400">{{ row.order }}</span>
         <!-- ポジション -->
-        <span class="w-8 text-center text-xs font-bold rounded px-1 py-0.5"
+        <span class="text-center text-xs font-bold rounded px-1.5 py-0.5 whitespace-nowrap"
               :class="row.position?'bg-indigo-600/40 text-indigo-300':'bg-gray-700 text-gray-500'">
-          {{ row.position || '−' }}
+          {{ row.position ? positionLabel(row.position) : '−' }}
         </span>
         <!-- 選手名 (交代表示) -->
         <div class="flex-1 min-w-0">
